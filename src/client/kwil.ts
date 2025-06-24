@@ -100,6 +100,7 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
     const cached = this.actionsCache.get(namespace);
     if (cached !== undefined) {
       return {
+        status: 200,
         data: cached,
       } as GenericResponse<Object[]>;
     }

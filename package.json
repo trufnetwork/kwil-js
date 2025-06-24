@@ -24,14 +24,15 @@
     "pack_pre": "copyfiles package.json README.md dist && rimraf ./kwil*.tgz",
     "pack_post": "copyfiles ./kwil*.tgz ./pkg && rimraf ./kwil*.tgz",
     "pack": "npm run pack_build && npm run pack_pre && npm --prefix ./dist pack && npm run pack_post",
-    "integration": "jest --runInBand --testPathPattern=tests/integration --testTimeout=30000"
+    "integration": "jest --runInBand --testPathPattern=tests/integration --testTimeout=30000",
+    "test": "jest"
   },
   "author": "Kwil, Inc. <luke@kwil.com>",
   "license": "MIT",
   "devDependencies": {
     "@commitlint/cli": "^17.7.1",
     "@commitlint/config-conventional": "^17.7.0",
-    "@types/jest": "^29.5.13",
+    "@types/jest": "^29.5.14",
     "@types/node": "^18.11.17",
     "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "^5.38.0",
@@ -44,13 +45,13 @@
     "eslint-config-prettier": "^8.5.0",
     "eslint-plugin-prettier": "^4.2.1",
     "husky": "^8.0.3",
-    "jest": "^29.5.0",
+    "jest": "^29.7.0",
     "near-api-js": "^2.1.4",
     "prettier": "^2.7.1",
     "rimraf": "^3.0.2",
     "scrypt-js": "^3.0.1",
     "standard-version": "^9.5.0",
-    "ts-jest": "^29.1.0",
+    "ts-jest": "^29.4.0",
     "ts-node": "^10.9.2",
     "tweetnacl": "^1.0.3",
     "typescript": "^4.9.5"
@@ -60,6 +61,7 @@
     "ethers": "^6.9.1",
     "jssha": "^3.2.0",
     "long": "^5.2.1",
+    "lru-cache": "^11.1.0",
     "uuid": "^11.1.0"
   },
   "engines": {

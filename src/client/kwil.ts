@@ -29,7 +29,7 @@ import { RawStatementPayload } from '../core/payload';
 import { resolveNamespace, validateNamespace } from '../utils/namespace';
 import { inferKeyType } from '../utils/keys';
 import { bytesToHex } from '../utils/serial';
-import { InMemoryCache } from '../utils/cache';
+import { LRUCache } from 'lru-cache';
 
 /**
  * The main class for interacting with the Kwil network.
@@ -44,7 +44,7 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
 
   private authMode?: string; // To store the mode on the class for subsequent requests
 
-  private actionsCache = new InMemoryCache<Object[]>();
+  private actionsCache: LRUCache<string, Object[]>;
 
   protected constructor(opts: KwilConfig) {
     super(opts);
@@ -53,6 +53,12 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
     this.chainId = opts.chainId;
 
     this.autoAuthenticate = opts.autoAuthenticate ?? true;
+
+    // create cache
+    this.actionsCache = new LRUCache<string, Object[]>({
+      max: 500,
+      ttl: 24 * 1000 * 60 * 60, // 1 day TTL
+    });
 
     // create funder
     this.funder = new Funder<T>(
@@ -86,15 +92,30 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
    * @returns A promise that resolves to the actions in the database.
    */
   public async getActions(namespace: string): Promise<GenericResponse<Object[]>> {
-    const data = await this.actionsCache.get(namespace, async () => {
-      const response = await this.selectQuery(
-        'SELECT * FROM info.actions WHERE namespace = $namespace', 
-        { $namespace: namespace }
-      );
-      return response.data || [];
-    });
+    if (!validateNamespace(namespace)) {
+      throw new Error('Please provide a valid namespace');
+    }
 
-    return { data } as GenericResponse<Object[]>;
+    // Check cache first
+    const cached = this.actionsCache.get(namespace);
+    if (cached !== undefined) {
+      return {
+        data: cached,
+      } as GenericResponse<Object[]>;
+    }
+
+    // Fetch from database
+    const response = await this.selectQuery(
+      'SELECT * FROM info.actions WHERE namespace = $namespace',
+      { $namespace: namespace }
+    );
+
+    // Cache successful responses
+    if (response.data) {
+      this.actionsCache.set(namespace, response.data);
+    }
+
+    return response;
   }
 
   /**

@@ -29,6 +29,7 @@ import { RawStatementPayload } from '../core/payload';
 import { resolveNamespace, validateNamespace } from '../utils/namespace';
 import { inferKeyType } from '../utils/keys';
 import { bytesToHex } from '../utils/serial';
+import { InMemoryCache } from '../utils/cache';
 
 /**
  * The main class for interacting with the Kwil network.
@@ -42,6 +43,8 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
   public auth: Auth<T>;
 
   private authMode?: string; // To store the mode on the class for subsequent requests
+
+  private actionsCache = new InMemoryCache<Object[]>();
 
   protected constructor(opts: KwilConfig) {
     super(opts);
@@ -83,12 +86,15 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
    * @returns A promise that resolves to the actions in the database.
    */
   public async getActions(namespace: string): Promise<GenericResponse<Object[]>> {
-    if (!validateNamespace(namespace)) {
-      throw new Error('Please provide a valid namespace');
-    }
-    return await this.selectQuery('SELECT * FROM info.actions WHERE namespace = $namespace', {
-      $namespace: namespace,
+    const data = await this.actionsCache.get(namespace, async () => {
+      const response = await this.selectQuery(
+        'SELECT * FROM info.actions WHERE namespace = $namespace', 
+        { $namespace: namespace }
+      );
+      return response.data || [];
     });
+
+    return { data } as GenericResponse<Object[]>;
   }
 
   /**

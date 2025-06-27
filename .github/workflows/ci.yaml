@@ -54,7 +54,7 @@ jobs:
 
       - name: Set up KwilDB Docker in Public mode
         run: |
-          git clone https://github.com/trufnetwork/kwil-db.git /tmp/kwil-db-public -b v0.10.2
+          git clone https://github.com/trufnetwork/kwil-db.git /tmp/kwil-db-public -b v0.10.0-rc.1
           cd /tmp/kwil-db-public
           task work
           task build:docker

@@ -2,13 +2,13 @@
 
 This document contains important information for migrating between Kwil-JS versions.
 
-For migrations guides between earlier versions, please look for this document in the corresponding [release tag](https://github.com/kwilteam/kwil-js/tags).
+For migrations guides between earlier versions, please look for this document in the corresponding [release tag](https://github.com/trufnetwork/kwil-js/tags).
 
 If you have any questions on a migration, please reach out to luke@kwil.com.
 
-## Migrating from @kwilteam/kwil-js@0.8 to @kwilteam/kwil-js@0.9
+## Migrating from @trufnetwork/kwil-js@0.8 to @trufnetwork/kwil-js@0.9
 
-Below is a list of all key changes from the [@kwilteam/kwil-js v0.8 SDK](https://github.com/kwilteam/kwil-js/releases/tag/v0.8.6) to the v0.9
+Below is a list of all key changes from the [@trufnetwork/kwil-js v0.8 SDK](https://github.com/trufnetwork/kwil-js/releases/tag/v0.8.6) to the v0.9
 
 Note that kwil-js v0.9 must be used with kwil-db v0.10.0.
 

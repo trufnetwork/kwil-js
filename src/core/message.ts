@@ -4,14 +4,14 @@ import { UnencodedActionPayload } from './payload';
 import { AnySignatureType, Signature, SignatureType } from './signature';
 
 /**
- * `MsgReceipt` is the interface for a payload structure for a response from the Kwil `call` GRPC endpoint {@link https://github.com/kwilteam/proto/blob/main/kwil/tx/v1/call.proto}.
+ * `MsgReceipt` is the interface for a payload structure for a response from the Kwil `call` GRPC endpoint.
  */
 export interface MsgReceipt<T extends object> {
   get result(): Nillable<T[]>;
 }
 
 /**
- * `MsgData` is the interface for a payload structure for a request to the Kwil `call` GRPC endpoint {@link https://github.com/kwilteam/proto/blob/main/kwil/tx/v1/call.proto}.
+ * `MsgData` is the interface for a payload structure for a request to the Kwil `call` GRPC endpoint.
  */
 
 export interface MsgData<T extends PayloadBytesTypes> {
@@ -31,7 +31,7 @@ interface MsgBody<T extends PayloadBytesTypes> {
 }
 
 /**
- * `Message` is the payload structure for a request to the Kwil `call` GRPC endpoint {@link https://github.com/kwilteam/proto/blob/main/kwil/tx/v1/call.proto}.
+ * `Message` is the payload structure for a request to the Kwil `call` GRPC endpoint.
  *
  * All bytes in the payload are base64 encoded.
  */
@@ -44,7 +44,7 @@ export interface CallClientResponse<T> {
 }
 
 /**
- * `BaseMessage` is the bass class for the payload structure for a request to the Kwil `call` GRPC endpoint {@link https://github.com/kwilteam/proto/blob/main/kwil/tx/v1/call.proto}.
+ * `BaseMessage` is the bass class for the payload structure for a request to the Kwil `call` GRPC endpoint.
  *
  * Bytes in the message can be typed to be either base64 encoded or Uint8Array. Uint8Array should be used when building the message within the SDK, and base64 should be used for the final message to be send over GRPC.
  *

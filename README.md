@@ -4,7 +4,7 @@ Kwil-JS is a JavaScript/Typescript SDK for building browser and NodeJS applicati
 
 ## Version Compatibility
 
-Make sure to use the correct version of the Kwil-JS SDK for the version of the [Kwil-DB](https://github.com/kwilteam/kwil-db/tags) you are using:
+Make sure to use the correct version of the Kwil-JS SDK for the version of the [Kwil-DB](https://github.com/trufnetwork/kwil-db/tags) you are using:
 
 | Kwil-JS Version | Kwil-DB Version |
 | :-------------: | :-------------: |
@@ -15,7 +15,7 @@ Make sure to use the correct version of the Kwil-JS SDK for the version of the [
 ## Installation
 
 ```bash
-npm i @kwilteam/kwil-js ethers
+npm i @trufnetwork/kwil-js ethers
 ```
 
 ## Initialization
@@ -26,7 +26,7 @@ Configure your `NodeKwil` or `WebKwil` class by providing the required configura
 
 ```javascript
 import { BrowserProvider } from 'ethers';
-import { WebKwil } from '@kwilteam/kwil-js';
+import { WebKwil } from '@trufnetwork/kwil-js';
 
 // to be used for funding and signing transactions
 const provider = new BrowserProvider(window.ethereum)
@@ -41,7 +41,7 @@ const kwil = new WebKwil({
 
 ```javascript
 const { Wallet } = require('ethers');
-const kwiljs = require('@kwilteam/kwil-js');
+const kwiljs = require('@trufnetwork/kwil-js');
 
 // to be used for signing transactions
 // instead of a provider, nodeJS requires a wallet
@@ -72,7 +72,7 @@ The account identifier can be passed as a hex string or as bytes.
 ### Browser
 
 ```javascript
-import { KwilSigner } from '@kwilteam/kwil-js';
+import { KwilSigner } from '@trufnetwork/kwil-js';
 import { BrowserProvider } from 'ethers';
 
 const provider = new BrowserProvider(window.ethereum)
@@ -89,7 +89,7 @@ const kwilSigner = new KwilSigner(signer, identifier);
 ### NodeJS
 
 ```javascript
-import { KwilSigner } from '@kwilteam/kwil-js';
+import { KwilSigner } from '@trufnetwork/kwil-js';
 import { Wallet } from 'ethers';
 
 const signer = new Wallet("my_ethereum_private_key");
@@ -245,7 +245,7 @@ The examples below show how to override the input types for executing an action;
 Using named inputs:
 
 ```javascript
-import { Utils } from '@kwilteam/kwil-js';
+import { Utils } from '@trufnetwork/kwil-js';
 const { DataType } = Utils;
 
 const body = {
@@ -264,7 +264,7 @@ await kwil.execute(body, kwilSigner);
 Using positional inputs:
 
 ```javascript
-import { Utils } from '@kwilteam/kwil-js';
+import { Utils } from '@trufnetwork/kwil-js';
 const { DataType } = Utils;
 
 const body = {
@@ -293,7 +293,7 @@ To use an ED25519 signature:
 
 ```javascript
 import nacl from 'tweetnacl';
-import { KwilSigner } from '@kwilteam/kwil-js';
+import { KwilSigner } from '@trufnetwork/kwil-js';
 
 // create keypair and signer
 const keys = nacl.sign.keyPair();

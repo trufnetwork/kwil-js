@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
-### [0.9.4](https://github.com/trufnetwork/kwil-js/compare/v0.9.3...v0.9.4) (2025-04-01)
+### [0.9.5](https://github.com/trufnetwork/kwil-js/compare/v0.9.3...v0.9.5) (2025-04-01)
 
 
 ### Bug Fixes

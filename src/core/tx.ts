@@ -4,14 +4,14 @@ import { strings } from "../utils/strings";
 import { PayloadType, SerializationType, BytesEncodingStatus, PayloadBytesTypes } from "./enums";
 
 /** 
- * `TxReceipt` is the interface for a payload structure for a a response from the Kwil `broadcast` GRPC endpoint {@link https://github.com/kwilteam/proto/blob/main/kwil/tx/v1/broadcast.proto}.
+ * `TxReceipt` is the interface for a payload structure for a a response from the Kwil `broadcast` GRPC endpoint.
 */
 export interface TxReceipt {
     get tx_hash(): HexString;
 }
 
 /**
- * `TxnData` is the interface for a payload structure for a a request to the Kwil `broadcast` GRPC endpoint {@link https://github.com/kwilteam/proto/blob/main/kwil/tx/v1/broadcast.proto}.
+ * `TxnData` is the interface for a payload structure for a a request to the Kwil `broadcast` GRPC endpoint.
  */
 export interface TxnData<T extends PayloadBytesTypes> {
     signature: Signature<T>;
@@ -32,13 +32,13 @@ interface TxBody<T extends PayloadBytesTypes> {
 }
 
 /**
- * `Transaction` is the payload structure for a a request to the Kwil `broadcast` GRPC endpoint {@link https://github.com/kwilteam/proto/blob/main/kwil/tx/v1/broadcast.proto}.
+ * `Transaction` is the payload structure for a a request to the Kwil `broadcast` GRPC endpoint.
  * All bytes in the payload are base64 encoded.
  */
 export type Transaction = BaseTransaction<BytesEncodingStatus.BASE64_ENCODED>;
 
 /**
- * `BaseTransaction` is the base class for a payload structure for a a request to the Kwil `broadcast` GRPC endpoint {@link https://github.com/kwilteam/proto/blob/main/kwil/tx/v1/broadcast.proto}.
+ * `BaseTransaction` is the base class for a payload structure for a a request to the Kwil `broadcast` GRPC endpoint.
  * Bytes in the transaction can be typed to be either base64 encoded or Uint8Array. Uint8Array should be used when building the transaction within the SDK, and base64 should be used for the final transaction to be send over GRPC.
  * 
  * @template {BytesEncodingStatus.BASE64_ENCODED | BytesEncodingStatus.UINT8_ENCODED} T - The type of bytes in the transaction. Can be either base64 encoded or Uint8Array.

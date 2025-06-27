@@ -1,5 +1,5 @@
 {
-  "name": "@kwilteam/kwil-js",
+  "name": "@trufnetwork/kwil-js",
   "version": "0.9.4",
   "description": "",
   "main": "./dist/index.js",

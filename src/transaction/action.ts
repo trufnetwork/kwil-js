@@ -349,67 +349,37 @@ export class Action<T extends EnvironmentType> {
   ): boolean {
     const actionInputKeys = Object.keys(actionInputEntries);
 
-    // if action does not require parameters, return true
-    if (
-      (!selectedAction.parameter_names || selectedAction.parameter_names.length === 0) &&
-      Object.keys(actionInputEntries).length === 0
-    ) {
+    // If the action expects no parameters, ensure none are provided
+    if (!selectedAction.parameter_names || selectedAction.parameter_names.length === 0) {
+      if (actionInputKeys.length !== 0) {
+        throw new Error(`No parameters found for action: ${this.actionName}.`);
+      }
       return true;
     }
 
-    // throw runtime error if action does not have any parameters but inputs were provided
-    if (
-      (!selectedAction.parameter_names || selectedAction.parameter_names.length === 0) &&
-      actionInputEntries.length !== 0
-    ) {
-      throw new Error(`No parameters found for action: ${this.actionName}.`);
-    }
+    // Allow callers to omit parameters that have server-side defaults.
+    // Therefore, we no longer throw when parameters are missing – instead we only
+    // validate that any *provided* parameters actually exist on the action and
+    // that positional parameters are used correctly.
 
-    // throw runtime error if no actionInputs were provided but are required
-    if (actionInputEntries.length == 0 && selectedAction.parameter_names.length > 0) {
-      throw new Error(
-        `No action parameters have been included. Required parameters: ${selectedAction.parameter_names.join(
-          ', '
-        )}`
-      );
-    }
-
-    // return true if using positional parameters
-    if (Object.keys(actionInputEntries).every(key => key.startsWith('$pstn_'))) {
+    // return true early if using positional parameters
+    if (actionInputKeys.every((key) => key.startsWith('$pstn_'))) {
       return true;
     }
 
-    // Check to see if the actionInputs match the expected selectedAction parameters
-    const missingParameters = new Set<string>();
-    selectedAction.parameter_names.forEach((parameterName) => {
-      if (!actionInputKeys.includes(parameterName)) {
-        missingParameters.add(parameterName);
-      }
-    });
+    // Check for unexpected/incorrect parameters
+    const incorrectParameters = actionInputKeys.filter(
+      (key) => !selectedAction.parameter_names.includes(key)
+    );
 
-    if (missingParameters.size > 0) {
+    if (incorrectParameters.length > 0) {
       throw new Error(
-        `Missing parameters: ${Array.from(missingParameters).join(', ')} for action '${selectedAction.name
-        }'`
+        `Incorrect parameters: ${incorrectParameters.join(', ')} for action '${selectedAction.name}'`
       );
     }
 
-    const incorrectParameters = new Set<string>();
-    actionInputKeys.forEach((actionInputKey) => {
-      if (
-        !selectedAction.parameter_names.some((parameterName) => actionInputKey === parameterName)
-      ) {
-        incorrectParameters.add(actionInputKey);
-      }
-    });
-
-    if (incorrectParameters.size > 0) {
-      throw new Error(
-        `Incorrect parameters: ${Array.from(incorrectParameters).join(', ')} for action '${selectedAction.name
-        }'`
-      );
-    }
-
+    // If we reach here, all provided parameters are valid (even if some expected
+    // parameters are omitted due to defaults).
     return true;
   }
 

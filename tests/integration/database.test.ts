@@ -31,6 +31,14 @@ describe('SQL Schema Deployment and Management', () => {
         tx_hash: expect.any(String),
       });
     });
+
+    it('should create users table for default param test', async () => {
+      const createTable = `{${namespace}} CREATE TABLE users (id int PRIMARY KEY NOT NULL, name text NOT NULL, age int NOT NULL);`;
+      const result = await kwil.execSql(createTable, {}, kwilSigner, true);
+      expect(result.data).toMatchObject<TxReceipt>({
+        tx_hash: expect.any(String),
+      });
+    });
   });
 
   describe('Action Creation', () => {
@@ -63,6 +71,14 @@ describe('SQL Schema Deployment and Management', () => {
         name: 'get_post_by_title',
         sql: `{${namespace}}CREATE ACTION get_post_by_title($title text) PUBLIC VIEW RETURNS (post_title text, post_body text) { for $row in SELECT post_title, post_body FROM posts WHERE post_title = $title { RETURN $row.post_title, $row.post_body; } }`,
       },
+      {
+        name: 'add_user_with_default',
+        sql: `{${namespace}}CREATE ACTION add_user_with_default($id int, $name text, $age int DEFAULT 99) PUBLIC { INSERT INTO users (id, name, age) VALUES ($id, $name, $age); }`,
+      },
+      {
+        name: 'get_user',
+        sql: `{${namespace}}CREATE ACTION get_user($id int) PUBLIC VIEW RETURNS (name text, age int) { RETURN SELECT name, age FROM users WHERE id = $id; }`,
+      }
     ];
 
     actions.forEach((action) => {
@@ -402,6 +418,44 @@ describe('SQL Schema Deployment and Management', () => {
         throw new Error('No data returned from action call');
       }
     })
+
+    it('should execute add_user_with_default action without the default parameter', async () => {
+      const actionBody: ActionBody = {
+        namespace,
+        name: 'add_user_with_default',
+        inputs: [
+          {
+            $id: 1,
+            $name: 'John Doe',
+          },
+        ],
+      };
+
+      const result = await kwil.execute(actionBody, kwilSigner, true);
+      expect(result.data).toMatchObject<TxReceipt>({
+        tx_hash: expect.any(String),
+      });
+    });
+
+    it('should verify the user was created with the default age', async () => {
+      const actionBody: CallBody = {
+        namespace,
+        name: 'get_user',
+        inputs: {
+          $id: 1,
+        },
+      };
+
+      const result = await kwil.call(actionBody, kwilSigner);
+      if (result.data) {
+        expect(result.data?.result && result.data.result[0]).toMatchObject({
+          name: 'John Doe',
+          age: '99',
+        });
+      } else {
+        throw new Error('No data returned from action execution');
+      }
+    });
   });
 
   describe('Error Cases', () => {

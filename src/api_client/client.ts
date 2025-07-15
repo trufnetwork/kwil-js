@@ -340,7 +340,7 @@ export default class Client extends Api {
   }
 
   private parseQueryResponse(queryResponse: QueryResponse): Object[] {
-    const { column_names, values } = queryResponse;
+    const { column_names, column_types, values } = queryResponse;
 
     if (!values || values.length === 0) {
       return [];
@@ -350,7 +350,12 @@ export default class Client extends Api {
     const mapValueToColumn = (rowValues: any[]): Record<string, any> => {
       const obj: Record<string, any> = {};
       for (let i = 0; i < column_names.length; i++) {
-        obj[column_names[i]] = rowValues[i];
+        if (column_types[i].name === "int8" || column_types[i].name === "int") {
+          console.log("ROW VALUES", rowValues[i]);
+          obj[column_names[i]] = Number(rowValues[i]);
+        } else {
+            obj[column_names[i]] = rowValues[i];
+        }
       }
       return obj;
     };

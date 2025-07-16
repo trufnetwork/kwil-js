@@ -30,18 +30,16 @@ jobs:
         with:
           submodules: true
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
       - name: Set up Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '20.x'
-
-      - name: Cache Node.js modules
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-node-${{ hashFiles('./package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-node-
+          cache: 'pnpm'
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -85,15 +83,15 @@ jobs:
 
       - name: Install and build kwiljs
         run: |
-          npm install
-          npm run build
+          pnpm install --frozen-lockfile
+          pnpm run build
 
       - name: Run integration tests
         run: |
           chain_id=`curl -X POST http://localhost:8484/rpc/v1 -H "Content-Type: application/json" -d '{"jsonrpc": "2.0", "id": 1, "method": "user.chain_info", "params": {}}' | jq -r '.result.chain_id'`
           echo "Chain ID: $chain_id"
           echo "run KWIL-JS TEST against kwild(http:localhost:8484),  with $chain_id"
-          PRIVATE_KEY=0000000000000000000000000000000000000000000000000000000000000001 CHAIN_ID=$chain_id GATEWAY_ON=false GAS_ON=false KWIL_PROVIDER=http://localhost:8484 npm run integration
+          PRIVATE_KEY=0000000000000000000000000000000000000000000000000000000000000001 CHAIN_ID=$chain_id GATEWAY_ON=false GAS_ON=false KWIL_PROVIDER=http://localhost:8484 pnpm run integration
       
       - name: Cleanup Docker
         if: always()

@@ -16,16 +16,19 @@
   ],
   "scripts": {
     "clean": "rimraf dist/*",
-    "build": "npm run clean && tsc",
+    "build": "pnpm run clean && tsc",
     "commit": "git add . && git-cz",
     "prepare": "husky install",
     "release": "standard-version",
-    "pack_build": "npm run clean && tsc --outDir ./dist --sourceMap false --declarationDir ./dist",
+    "pack_build": "pnpm run clean && tsc --outDir ./dist --sourceMap false --declarationDir ./dist",
     "pack_pre": "copyfiles package.json README.md dist && rimraf ./kwil*.tgz",
     "pack_post": "copyfiles ./kwil*.tgz ./pkg && rimraf ./kwil*.tgz",
-    "pack": "npm run pack_build && npm run pack_pre && npm --prefix ./dist pack && npm run pack_post",
+    "pack": "pnpm run pack_build && pnpm run pack_pre && pnpm --prefix ./dist pack && pnpm run pack_post",
     "integration": "jest --runInBand --testPathPattern=tests/integration --testTimeout=30000",
-    "test": "jest"
+    "test": "jest",
+    "lint": "eslint src --ext .ts,.tsx",
+    "lint:fix": "eslint src --ext .ts,.tsx --fix",
+    "type-check": "tsc --noEmit"
   },
   "author": "Kwil, Inc. <luke@kwil.com>",
   "license": "MIT",

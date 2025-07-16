@@ -57,7 +57,7 @@ jobs:
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Release
-        if: ${{ github.event.inputs.dist_tag == 'latest' }}
+        if: ${{ github.event.inputs.dist_tag == 'latest' && !env.ACT }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -90,12 +90,24 @@ jobs:
       - name: Update version in package.json
         run: pnpm version $(echo ${{ steps.version.outputs.version }} | sed 's/^v//') --no-git-tag-version
 
+      - name: Commit version bump
+        if: ${{ !env.ACT }}
+        run: |
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add package.json pnpm-lock.yaml || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): bump version to ${{ steps.version.outputs.version }}"
+            git push origin HEAD:main
+          fi
+
       - name: Publish to NPM
-        run: pnpm publish --tag ${{ github.event.inputs.dist_tag }} --no-git-checks
+        run: ${{ env.ACT && './scripts/mock-publish.sh' || 'pnpm publish' }} --tag ${{ github.event.inputs.dist_tag }} --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create and push git tag
+        if: ${{ !env.ACT }}
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com

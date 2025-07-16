@@ -8,7 +8,7 @@ on:
         required: true
         type: number
       npm_tag:
-        description: 'NPM tag for preview (default: pr-NUMBER)'
+        description: 'NPM tag for preview (default: preview)'
         required: false
         type: string
 
@@ -22,6 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check PR state
+        if: ${{ !env.ACT }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -70,24 +71,25 @@ jobs:
           BASE_VERSION=$(node -p "require('./package.json').version")
           TIMESTAMP=$(date +%Y%m%d%H%M%S)
           SHORT_SHA=$(git rev-parse --short HEAD)
-          PREVIEW_VERSION="${BASE_VERSION}-preview.${TIMESTAMP}.${SHORT_SHA}"
+          PR_NUMBER="${{ inputs.pr_number }}"
+          PREVIEW_VERSION="${BASE_VERSION}-preview.pr${PR_NUMBER}.${TIMESTAMP}.${SHORT_SHA}"
           pnpm version $PREVIEW_VERSION --no-git-tag-version
           echo "version=$PREVIEW_VERSION" >> $GITHUB_OUTPUT
           
-          # Determine NPM tag
+          # Always use 'preview' tag unless explicitly specified
           if [ -n "${{ inputs.npm_tag }}" ]; then
             NPM_TAG="${{ inputs.npm_tag }}"
           else
-            NPM_TAG="pr-${{ inputs.pr_number }}"
+            NPM_TAG="preview"
           fi
           echo "npm_tag=$NPM_TAG" >> $GITHUB_OUTPUT
-
       - name: Publish preview
-        run: pnpm publish --tag ${{ steps.preview.outputs.npm_tag }} --no-git-checks
+        run: ${{ env.ACT && './scripts/mock-publish.sh' || 'pnpm publish' }} --access public --tag ${{ steps.preview.outputs.npm_tag }} --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Create and push git tag
+        if: ${{ !env.ACT }}
         run: |
           git config user.name github-actions
           git config user.email github-actions@github.com
@@ -121,3 +123,4 @@ jobs:
               repo: context.repo.repo,
               body: comment
             });
+        if: ${{ !env.ACT }}

@@ -14,3 +14,6 @@ testapp/node_modules
 .DS_Store
 .npmrc
 /test-eth-app/src/examples/
+# Act testing files
+.secrets.act
+.act-events

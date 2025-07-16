@@ -88,14 +88,14 @@ jobs:
           echo "run KWIL-JS TEST against kwild(http:localhost:8484),  with $chain_id"
           PRIVATE_KEY=0000000000000000000000000000000000000000000000000000000000000001 CHAIN_ID=$chain_id GATEWAY_ON=false GAS_ON=false KWIL_PROVIDER=http://localhost:8484 pnpm run integration
       
-      # - name: Cleanup Docker
-      #   if: always()
-      #   run: |
-      #     docker compose -f /tmp/kwil-db-public/contrib/docker/compose/kwil/docker-compose.yml down
-      #     if [ -n "${{ env.ACT }}" ]; then
-      #       # only run in act
-      #       docker system prune -af
-      #     fi
+      - name: Cleanup Docker
+        if: always()
+        run: |
+          docker compose -f /tmp/kwil-db-public/contrib/docker/compose/kwil/docker-compose.yml down
+          if [ -n "${{ env.ACT }}" ]; then
+            # only run in act
+            docker system prune -af
+          fi
 
       # - name: Set up KwilDB Docker in Private mode
       #   run: |

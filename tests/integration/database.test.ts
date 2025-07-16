@@ -518,6 +518,13 @@ describe('SQL Schema Deployment and Management', () => {
       });
     });
 
+    it('should drop users table', async () => {
+      const result = await kwil.execSql(`{${namespace}} DROP TABLE users;`, {}, kwilSigner, true);
+      expect(result.data).toMatchObject<TxReceipt>({
+        tx_hash: expect.any(String),
+      });
+    });
+
     it('should drop namespace', async () => {
       const result = await kwil.execSql(`DROP NAMESPACE ${namespace};`, {}, kwilSigner, true);
       expect(result.data).toMatchObject<TxReceipt>({

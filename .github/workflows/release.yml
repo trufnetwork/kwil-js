@@ -39,6 +39,7 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run build
       - run: pnpm test          # or lint / type-check / build / test matrix
 
   create_release:

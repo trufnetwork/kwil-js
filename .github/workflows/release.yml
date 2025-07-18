@@ -14,23 +14,54 @@ on:
 
 permissions:
   contents: write
-  packages: write
+  pull-requests: write
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  create_release:
+  test:
     runs-on: ubuntu-latest
-    # runs ok on local tests
-    if: ${{ github.ref == 'refs/heads/main' || github.actor == 'nektos/act' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache pnpm modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+      - uses: pnpm/action-setup@v4
+        with: { version: 10 }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm test          # or lint / type-check / build / test matrix
+
+  create_release:
+    needs: test
+    runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Cache pnpm modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.pnpm-store
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      # ------------------------------------------------------------------
+      # 1. Work out what version we are about to release
+      # ------------------------------------------------------------------
       - name: Determine Version
         id: version
         env:
@@ -39,36 +70,31 @@ jobs:
           INPUT_VERSION="${{ github.event.inputs.version }}"
           CHANNEL="${{ github.event.inputs.dist_tag }}"
           SHORT_SHA=$(git rev-parse --short HEAD)
+
           if [ -n "$INPUT_VERSION" ]; then
-            echo "version=$INPUT_VERSION" >> $GITHUB_OUTPUT
+            echo "version=$INPUT_VERSION"
+            echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
           if [ "$CHANNEL" != "latest" ]; then
-            BASE_VERSION=$(node -p "require('./package.json').version")
+            BASE_VERSION=$(jq -r '.version' package.json)
             NEW_VERSION="v${BASE_VERSION}-${CHANNEL}.${SHORT_SHA}"
-            echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # For stable releases (latest), auto increment patch from last tag
+
           LATEST_TAG=$(gh release view --json tagName --jq .tagName 2>/dev/null || echo "v0.0.0")
-          # Remove 'v' prefix if present for semver processing
           LATEST_VERSION=${LATEST_TAG#v}
-          NEW_VERSION_NO_V=$(npx semver -i patch "$LATEST_VERSION")
+          NEW_VERSION_NO_V=$(npx --yes semver -i patch "$LATEST_VERSION")
           NEW_VERSION="v${NEW_VERSION_NO_V}"
-          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release
-        if: ${{ github.event.inputs.dist_tag == 'latest' && !env.ACT }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create ${{ steps.version.outputs.version }} \
-              --repo="$GITHUB_REPOSITORY" \
-              --title="${{ steps.version.outputs.version }}" \
-              --generate-notes
-
+      # ------------------------------------------------------------------
+      # 2. Install tooling
+      # ------------------------------------------------------------------
       - name: Setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v4
         with:
           version: 10
 
@@ -85,34 +111,91 @@ jobs:
       - name: Build
         run: pnpm run build
 
-      # TODO: Too many tests are failing from a preview state already
-      #       so we're skipping them for now
-      # - name: Run tests
-      #   run: pnpm test
-
-      - name: Update version in package.json
-        run: pnpm version $(echo ${{ steps.version.outputs.version }} | sed 's/^v//') --no-git-tag-version
-
-      - name: Commit version bump
-        if: ${{ !env.ACT }}
+      # ------------------------------------------------------------------
+      # 3. Create release branch and update package.json
+      # ------------------------------------------------------------------
+      - name: Configure Git
         run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git add package.json pnpm-lock.yaml || true
-          if ! git diff --cached --quiet; then
-            git commit -m "chore(release): bump version to ${{ steps.version.outputs.version }}"
-            git push origin HEAD:main
-          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Publish to NPM
-        run: ${{ env.ACT && './scripts/mock-publish.sh' || 'pnpm publish' }} --tag ${{ github.event.inputs.dist_tag }} --no-git-checks
+      - name: Create release branch
+        if: ${{ github.event.inputs.dist_tag == 'latest' }}
+        run: |
+          BRANCH="release/${{ steps.version.outputs.version }}"
+          git checkout -b "$BRANCH"
+
+      - name: Bump package.json version
+        if: ${{ github.event.inputs.dist_tag == 'latest' }}
+        run: |
+          pnpm version "$(echo ${{ steps.version.outputs.version }} | sed 's/^v//')" --no-git-tag-version
+          git add package.json pnpm-lock.yaml || true
+          git commit -m "chore(release): bump version to ${{ steps.version.outputs.version }}"
+          git push -u origin HEAD
+
+      # ------------------------------------------------------------------
+      # 4. Open & merge PR (only for latest channel)
+      # ------------------------------------------------------------------
+      - name: Create PR
+        if: ${{ github.event.inputs.dist_tag == 'latest' }}
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh pr create \
+            --title "Release ${{ steps.version.outputs.version }}" \
+            --body "Automated release PR for ${{ steps.version.outputs.version }}." \
+            --base main \
+            --head "$(git symbolic-ref --short HEAD)"
+
+      - name: Merge PR
+        if: ${{ github.event.inputs.dist_tag == 'latest' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          PR_NUMBER=$(gh pr list --head "$(git symbolic-ref --short HEAD)" --json number --jq '.[0].number')
+          gh pr merge "$PR_NUMBER" --merge --delete-branch
+
+      # ------------------------------------------------------------------
+      # 5. Sync with main and create git tag
+      # ------------------------------------------------------------------
+      - name: Fast-forward sync with main
+        if: ${{ github.event.inputs.dist_tag == 'latest' }}
+        run: |
+          git fetch origin main
+          git merge --ff-only origin/main
 
       - name: Create and push git tag
-        if: ${{ !env.ACT }}
         run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
           git tag ${{ steps.version.outputs.version }}
-          git push origin ${{ steps.version.outputs.version }} 
+          git push origin ${{ steps.version.outputs.version }}
+
+      # ------------------------------------------------------------------
+      # 6. Publish to NPM with rollback on failure
+      # ------------------------------------------------------------------
+      - name: Publish to NPM
+        run: |
+          pnpm publish --tag ${{ github.event.inputs.dist_tag }} --provenance --no-git-checks || {
+            echo "Publish failed, deleting tag & release"
+            if [ "${{ github.event.inputs.dist_tag }}" = "latest" ]; then
+              gh release delete ${{ steps.version.outputs.version }} --yes 2>/dev/null || true
+            fi
+            git push origin ":refs/tags/${{ steps.version.outputs.version }}"
+            exit 1
+          }
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+
+      # ------------------------------------------------------------------
+      # 7. Create GitHub release
+      # ------------------------------------------------------------------
+      - name: Create GitHub Release
+        if: ${{ github.event.inputs.dist_tag == 'latest' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create ${{ steps.version.outputs.version }} \
+            --repo="$GITHUB_REPOSITORY" \
+            --title="${{ steps.version.outputs.version }}" \
+            --generate-notes
+
+

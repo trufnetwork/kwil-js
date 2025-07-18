@@ -108,9 +108,12 @@ jobs:
           git checkout -b "$BRANCH"
 
       - name: Bump package.json version
-        if: ${{ github.event.inputs.dist_tag == 'latest' }}
         run: |
           pnpm version "$(echo ${{ steps.version.outputs.version }} | sed 's/^v//')" --no-git-tag-version
+
+      - name: Commit package.json version
+        if: ${{ github.event.inputs.dist_tag == 'latest' }}
+        run: |
           git add package.json pnpm-lock.yaml || true
           git commit -m "chore(release): bump version to ${{ steps.version.outputs.version }}"
           git push -u origin HEAD

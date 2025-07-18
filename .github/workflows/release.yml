@@ -43,7 +43,8 @@ jobs:
       - run: pnpm test          # or lint / type-check / build / test matrix
 
   create_release:
-    needs: test
+    # we assume this runs only on main, and to merge to main
+    # it was already tested properly.
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository

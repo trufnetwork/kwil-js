@@ -1,43 +1,32 @@
-import { wrapEstimate, unwrapEstimate, wrapConfig, unwrapConfig } from "../../../src/client/intern";
+import { wrap, unwrap } from "../../../src/client/intern";
 import { Kwil } from "../../../src/client/kwil";
-import Client from "../../../src/api_client/client";
-import { Config } from "../../../src/api_client/config";
+import { Transaction } from "../../../src/core/tx";
+import { GenericResponse } from "../../../src/core/resreq";
+import { EnvironmentType } from "../../../src/core/enums";
 
-class TestKwil extends Kwil {
+class TestKwil extends Kwil<EnvironmentType> {
     constructor() {
         super({ kwilProvider: 'doesnt matter', chainId: 'doesnt matter' })
     }
 }
 
-describe("client/intern - estimates", () => {
+describe("client/intern", () => {
 
-    const testClient = new Client({ kwilProvider: 'doesnt matter' });
+    const mockEstimateMethod = jest.fn(async (tx: Transaction): Promise<GenericResponse<string>> => {
+        return { status: 200, data: "100" };
+    });
 
     it('wrap should wrap Kwil client', () => {
         const kwil = new TestKwil();
-        const wrapped = wrapEstimate(kwil, testClient.estimateCost);
+        const wrapped = wrap(kwil, mockEstimateMethod);
         expect(wrapped).toBe(undefined);
     })
 
-    it('unwrap should unwrap Kwil client etimate cost method', () => {
+    it('unwrap should unwrap Kwil client method', () => {
         const kwil = new TestKwil();
-        const unwrapped = unwrapEstimate(kwil);
+        wrap(kwil, mockEstimateMethod);
+        const unwrapped = unwrap(kwil);
         expect(typeof unwrapped).toBe('function');
-    });
-});
-
-describe("client/intern - config", () => {
-    const config: Config = { kwilProvider: 'doesnt matter', chainId: 'doesnt matter' };
-
-    it('wrap should wrap Kwil client to store configs', () => {
-        const kwil = new TestKwil();
-        const wrapped = wrapConfig(kwil, config);
-        expect(wrapped).toBe(undefined);
-    })
-
-    it('unwrap should unwrap Kwil client to expose configs', () => {
-        const kwil = new TestKwil();
-        const unwrapped = unwrapConfig(kwil);
-        expect(unwrapped).toStrictEqual(config);
+        expect(unwrapped).toBe(mockEstimateMethod);
     });
 });

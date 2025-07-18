@@ -1,4 +1,4 @@
-import { SerializationType } from '../../../src/core/enums';
+import { BytesEncodingStatus } from '../../../src/core/enums';
 import { BaseMessage, Message, Msg } from '../../../src/core/message';
 import { SignatureType } from '../../../src/core/signature';
 
@@ -8,15 +8,11 @@ describe('Message class methods with signature should all work', () => {
     test('Message constructor should work', () => {
         msg = new BaseMessage({
             body: {
-                description: "description",
                 payload: "payload"
             },
+            auth_type: SignatureType.SECP256K1_PERSONAL,
             sender: "sender",
-            signature: {
-                signature_bytes: "signature_bytes",
-                signature_type: SignatureType.SECP256K1_PERSONAL
-            },
-            serialization: SerializationType.SIGNED_MSG_CONCAT
+            signature: "signature_bytes"
         });
         expect(msg).toBeDefined();
     });
@@ -26,18 +22,15 @@ describe('Message class methods with signature should all work', () => {
     });
 
     test('Message signature getter should work', () => {
-        expect(msg.signature).toStrictEqual({
-            signature_bytes: "signature_bytes",
-            signature_type: SignatureType.SECP256K1_PERSONAL
-        });
+        expect(msg.signature).toBe("signature_bytes");
     });
 
     test('Message sender getter should work', () => {
         expect(msg.sender).toBe("sender");
     });
 
-    test('Message serialization getter should work', () => {
-        expect(msg.serialization).toBe(SerializationType.SIGNED_MSG_CONCAT);
+    test('Message auth_type getter should work', () => {
+        expect(msg.auth_type).toBe(SignatureType.SECP256K1_PERSONAL);
     });
 })
 
@@ -51,9 +44,8 @@ describe('Msg namespace functions with signature should all work as expected', (
         });
         expect(msg.body.payload).toEqual("payload");
         expect(msg.sender).toEqual("sender");
-        expect(msg.body.description).toBe('')
         expect(msg.signature).toBeNull();
-        expect(msg.serialization).toBe(SerializationType.SIGNED_MSG_CONCAT);
+        expect(msg.auth_type).toBe(SignatureType.SECP256K1_PERSONAL);
     });
 
     test('Msg.copy should work', () => {
@@ -61,18 +53,14 @@ describe('Msg namespace functions with signature should all work as expected', (
     
         // Using the Msg.copy function to set the signature
         const copiedMsg = Msg.copy(msg, (msg) => {
-            msg.signature = {
-                signature_bytes: "signature_bytes",
-                signature_type: SignatureType.SECP256K1_PERSONAL
-            }
+            msg.signature = "signature_bytes";
+            msg.auth_type = SignatureType.SECP256K1_PERSONAL;
         });
     
         // Instead of using a deep equality check, we'll validate individual properties
         expect(copiedMsg.body.payload).toEqual("payload");
         expect(copiedMsg.sender).toEqual("sender");
-    
-        // Check signature fields individually to avoid accessing the getter directly
-        expect(copiedMsg.signature?.signature_bytes).toEqual("signature_bytes");
-        expect(copiedMsg.signature?.signature_type).toEqual(SignatureType.SECP256K1_PERSONAL);
+        expect(copiedMsg.signature).toEqual("signature_bytes");
+        expect(copiedMsg.auth_type).toEqual(SignatureType.SECP256K1_PERSONAL);
     });    
 });

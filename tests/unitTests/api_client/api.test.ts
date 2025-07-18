@@ -15,10 +15,8 @@ describe('Api', () => {
   const defaultConfig = {
     kwilProvider: "shouldn't matter",
     timeout: 10000,
-    apiKey: '',
     logging: false,
     logger: console.log,
-    network: undefined,
     cache: 10 * 60
   };
 
@@ -77,13 +75,15 @@ describe('Api', () => {
   });
 
   describe('request', () => {
-    it('should create axios instance with correct headers', () => {
+    it('should create axios instance with correct config', () => {
       const api = new TestApi('http://test.com', defaultConfig);
       api['request']();
       expect(mockedAxios.create).toHaveBeenCalledWith(expect.objectContaining({
-        headers: expect.objectContaining({
-          "X-Api-Key": expect.any(String),
-        }),
+        baseURL: "shouldn't matter",
+        timeout: 10000,
+        maxContentLength: 536870912,
+        withCredentials: true,
+        headers: expect.any(Object),
       }));
     });
 

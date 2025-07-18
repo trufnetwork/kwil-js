@@ -5,7 +5,10 @@ require('dotenv').config();
 
 describe('Kwil Parameter Validation Tests', () => {
   const provider = new ethers.JsonRpcProvider(process.env.ETH_PROVIDER); // provider
-  const wallet = new ethers.Wallet(process.env.PRIVATE_KEY, provider); // signer
+  // Use a fallback private key if env var is not set, and ensure it has 0x prefix
+  const privateKey = process.env.PRIVATE_KEY || '0000000000000000000000000000000000000000000000000000000000000001';
+  const formattedPrivateKey = privateKey.startsWith('0x') ? privateKey : `0x${privateKey}`;
+  const wallet = new ethers.Wallet(formattedPrivateKey, provider); // signer
   const address = wallet.address; // address
 
   const kwil = new kwiljs.NodeKwil({

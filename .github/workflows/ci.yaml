@@ -80,6 +80,10 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm run build
 
+      - name: Run unit tests
+        run: |
+          pnpm test tests/unitTests --testPathIgnorePatterns="testing-functions/test.js"
+
       - name: Run integration tests
         run: |
           chain_id=`curl -X POST http://localhost:8484/rpc/v1 -H "Content-Type: application/json" -d '{"jsonrpc": "2.0", "id": 1, "method": "user.chain_info", "params": {}}' | jq -r '.result.chain_id'`

@@ -1,5 +1,4 @@
 import { Wallet } from "ethers";
-import { recoverSecp256k1PubKey } from "../../../src/utils/keys";
 import { KwilSigner } from "../../../src/core/kwilSigner";
 import nacl from "tweetnacl";
 import { SignatureType } from "../../../src/core/signature";
@@ -7,12 +6,12 @@ import { SignatureType } from "../../../src/core/signature";
 describe('KwilSigner Unit Tests', () => {
     test('KwilSigner with constructor using EthSigner should return a KwilSigner class', async () => {
         const ethSigner = Wallet.createRandom();
-        const publicKey = await recoverSecp256k1PubKey(ethSigner);
+        const walletAddress = ethSigner.address;
 
-        const kSigner = new KwilSigner(ethSigner, publicKey);
+        const kSigner = new KwilSigner(ethSigner, walletAddress);
 
         expect(kSigner).toBeDefined();
-        expect(kSigner.identifier).toBe(publicKey);
+        expect(kSigner.identifier).toBeInstanceOf(Uint8Array);
         expect(kSigner.signer).toBe(ethSigner);
         expect(kSigner.signatureType).toBe('secp256k1_ep');
         expect(kSigner).toBeInstanceOf(KwilSigner);

@@ -12,38 +12,20 @@ on:
         required: false
         default: "latest"
 
-permissions:
-  contents: write
-  pull-requests: write
-
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Cache pnpm modules
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pnpm-store-
-      - uses: pnpm/action-setup@v4
-        with: { version: 10 }
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm test          # or lint / type-check / build / test matrix
-
   create_release:
-    needs: test
+    # we assume this runs only on main, and to merge to main
+    # it was already tested properly.
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    if: github.ref == 'refs/heads/main'   # Only allow releases from main branch
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -126,9 +108,12 @@ jobs:
           git checkout -b "$BRANCH"
 
       - name: Bump package.json version
-        if: ${{ github.event.inputs.dist_tag == 'latest' }}
         run: |
           pnpm version "$(echo ${{ steps.version.outputs.version }} | sed 's/^v//')" --no-git-tag-version
+
+      - name: Commit package.json version
+        if: ${{ github.event.inputs.dist_tag == 'latest' }}
+        run: |
           git add package.json pnpm-lock.yaml || true
           git commit -m "chore(release): bump version to ${{ steps.version.outputs.version }}"
           git push -u origin HEAD

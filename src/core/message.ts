@@ -8,6 +8,7 @@ import { AnySignatureType, Signature, SignatureType } from './signature';
  */
 export interface MsgReceipt<T extends object> {
   get result(): Nillable<T[]>;
+  logs?: string;
 }
 
 /**

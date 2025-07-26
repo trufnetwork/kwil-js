@@ -309,7 +309,8 @@ export default class Client extends Api {
 
     return checkRes(res, (r) => {
       return {
-        result: this.parseQueryResponse(r.result.query_result)
+        result: this.parseQueryResponse(r.result.query_result),
+        logs: r.result.logs
       }
     });
   }

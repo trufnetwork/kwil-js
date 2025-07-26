@@ -149,6 +149,8 @@ export interface HealthResponse {
 export type SelectQueryResponse = QueryResponse;
 export type CallResponse = {
   query_result: QueryResponse;
+  logs?: string;
+  error?: string;
 };
 
 // This is the older response type for query.  Keeping now for reference.

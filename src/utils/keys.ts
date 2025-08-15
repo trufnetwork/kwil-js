@@ -1,4 +1,4 @@
-import { hexToBytes } from './serial';
+import { hexToBytes, bytesToHex } from './serial';
 import { AccountKeyType } from '../core/enums';
 
 export function inferKeyType(owner: string | Uint8Array): AccountKeyType {
@@ -6,7 +6,7 @@ export function inferKeyType(owner: string | Uint8Array): AccountKeyType {
     owner = hexToBytes(owner);
   }
 
-  if (owner.length === 32) {
+  if (owner.length === 32 || isXrplKey(owner)) {
     return AccountKeyType.ED25519;
   }
 
@@ -15,4 +15,8 @@ export function inferKeyType(owner: string | Uint8Array): AccountKeyType {
   }
 
   throw new Error('Cannot determine key type from owner.');
+}
+
+function isXrplKey(key: Uint8Array): boolean {
+  return key.length === 33 && bytesToHex(key).slice(0, 2) === "ed";
 }

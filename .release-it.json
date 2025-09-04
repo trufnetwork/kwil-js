@@ -1,0 +1,15 @@
+{
+  "git": {
+    "commitMessage": "chore: release ${npm.name} v${version}",
+    "tagName": "${npm.name}@${version}"
+  },
+  "plugins": {
+    "release-it-pnpm": {}
+  },
+  "npm": {
+    "versionArgs": ["--workspaces-update=false"]
+  },
+  "hooks": {
+    "before:init": ["pnpm run build"]
+  }
+}

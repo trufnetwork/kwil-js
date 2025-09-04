@@ -8,6 +8,9 @@
     "type": "git",
     "url": "https://github.com/idos-network/kwilteam-kwil-js.git"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "files": [
     "dist/**/*.js",
     "dist/**/*.ts",

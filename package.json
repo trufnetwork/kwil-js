@@ -3,7 +3,15 @@
   "version": "0.9.5",
   "description": "",
   "main": "./dist/index.js",
+  "module": "./dist-esm/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist-esm/index.js",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/trufnetwork/kwil-js.git"
@@ -11,16 +19,18 @@
   "files": [
     "dist/**/*.js",
     "dist/**/*.ts",
+    "dist-esm/**/*.js",
     "!dist/**/*.map",
     "!dist/**/*.test.js",
     "!dist/**/*.test.ts",
+    "!dist-esm/**/*.map",
     "CHANGELOG.md",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
-    "clean": "rimraf dist/*",
-    "build": "pnpm run clean && tsc",
+    "clean": "rimraf dist/* dist-esm/*",
+    "build": "pnpm run clean && tsc && tsc -p tsconfig.esm.json",
     "commit": "git add . && git-cz",
     "prepare": "husky install",
     "release": "standard-version",

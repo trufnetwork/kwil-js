@@ -2,8 +2,8 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "target": "ES2021",
-    "module": "ES2020",
-    "moduleResolution": "node",
+    "module": "ESNext",
+    "moduleResolution": "NodeNext",
     "outDir": "./dist-esm",
     "rootDir": "./src",
     "lib": ["DOM", "DOM.Iterable", "ES2020"],

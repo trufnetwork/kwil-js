@@ -8,6 +8,7 @@
 yarn.lock
 .env
 /dist
+/dist-esm
 /pkg
 testapp/node_modules
 /.husky

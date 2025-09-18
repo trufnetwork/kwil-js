@@ -1,6 +1,6 @@
 {
   "name": "@trufnetwork/kwil-js",
-  "version": "0.9.5",
+  "version": "0.9.7",
   "description": "",
   "main": "./dist/index.js",
   "module": "./dist-esm/index.js",

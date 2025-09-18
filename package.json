@@ -5,12 +5,14 @@
   "main": "./dist/index.js",
   "module": "./dist-esm/index.js",
   "types": "./dist/index.d.ts",
+  "sideEffects": false,
   "exports": {
     ".": {
       "import": "./dist-esm/index.js",
       "require": "./dist/index.js",
       "types": "./dist/index.d.ts"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "repository": {
     "type": "git",
@@ -18,8 +20,10 @@
   },
   "files": [
     "dist/**/*.js",
-    "dist/**/*.ts",
+    "dist/**/*.d.ts",
     "dist-esm/**/*.js",
+    "dist-esm/**/*.d.ts",
+    "dist-esm/package.json",
     "!dist/**/*.map",
     "!dist/**/*.test.js",
     "!dist/**/*.test.ts",
@@ -30,14 +34,14 @@
   ],
   "scripts": {
     "clean": "rimraf dist/* dist-esm/*",
-    "build": "pnpm run clean && tsc && tsc -p tsconfig.esm.json",
+    "build": "pnpm run clean && tsc && tsc -p tsconfig.esm.json && node -e \"const fs=require('fs');fs.mkdirSync('dist-esm',{recursive:true});fs.writeFileSync('dist-esm/package.json','{\\\"type\\\":\\\"module\\\"}\\n');\"",
+    "type-check:esm": "tsc -p tsconfig.esm.json --noEmit",
     "commit": "git add . && git-cz",
     "prepare": "husky install",
     "release": "standard-version",
-    "pack_build": "pnpm run clean && tsc --outDir ./dist --sourceMap false --declarationDir ./dist",
-    "pack_pre": "copyfiles package.json README.md dist && rimraf ./kwil*.tgz",
+    "pack_pre": "rimraf ./kwil*.tgz",
     "pack_post": "copyfiles ./kwil*.tgz ./pkg && rimraf ./kwil*.tgz",
-    "pack": "pnpm run pack_build && pnpm run pack_pre && pnpm --prefix ./dist pack && pnpm run pack_post",
+    "pack": "pnpm run build && pnpm run pack_pre && pnpm pack && pnpm run pack_post",
     "integration": "jest --runInBand --testPathPattern=tests/integration --testTimeout=30000",
     "test": "jest",
     "lint": "eslint src --ext .ts,.tsx",

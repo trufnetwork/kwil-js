@@ -95,4 +95,4 @@ namespace Utils {
   export import DataType = _DataType;
 }
 
-export { NodeKwil, WebKwil, KwilSigner, Types, Utils, Client };
+export { NodeKwil, WebKwil, KwilSigner, Types, Utils, Client, EnvironmentType };

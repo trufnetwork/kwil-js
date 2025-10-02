@@ -14,7 +14,7 @@ export function inferKeyType(owner: string | Uint8Array): AccountKeyType {
     return AccountKeyType.SECP256K1;
   }
 
-  throw new Error('Cannot determine key type from ownerrr.');
+  throw new Error('Cannot determine key type from owner.');
 }
 
 function isXrplKey(key: Uint8Array): boolean {

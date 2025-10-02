@@ -6,7 +6,7 @@ export function inferKeyType(owner: string | Uint8Array): AccountKeyType {
     owner = hexToBytes(owner);
   }
 
-  if (owner.length === 32 || isXrplKey(owner)) {
+  if (owner.length === 32 || isXrplKey(owner) || isStellarAddress(owner)) {
     return AccountKeyType.ED25519;
   }
 
@@ -19,4 +19,10 @@ export function inferKeyType(owner: string | Uint8Array): AccountKeyType {
 
 function isXrplKey(key: Uint8Array): boolean {
   return key.length === 33 && bytesToHex(key).slice(0, 2) === "ed";
+}
+
+function isStellarAddress(addr: Uint8Array): boolean {
+  const address = new TextDecoder('utf-8').decode(new Uint8Array(addr));
+
+  return /^G[A-Z0-9]{55}$/.test(address);
 }

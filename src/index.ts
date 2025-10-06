@@ -36,7 +36,9 @@ import Client from './api_client/client';
 import { AuthSuccess as _AuthSuccess, LogoutResponse as _LogoutResponse} from './core/auth';
 import { AuthBody as _AuthBody } from './core/signature';
 import { TransferBody as _TransferBody } from './funder/funding_types';
-import { Config as _Config } from './api_client/config';
+import { Config as _Config, KwilConfig as _KwilConfig } from './api_client/config';
+import { EthSigner as _EthSigner } from './core/signature';
+import { Kwil as _Kwil } from './client/kwil';
 
 namespace Types {
   export type TxReceipt = _TxReceipt;
@@ -57,6 +59,9 @@ namespace Types {
   export type LogoutResponse<T extends EnvironmentType> = _LogoutResponse<T>;
   export type TransferBody = _TransferBody;
   export type Config = _Config
+  export type KwilConfig = _KwilConfig
+  export type EthSigner = _EthSigner
+  export type Kwil<T extends EnvironmentType = EnvironmentType> = _Kwil<T>
   export type NamedParams = _NamedParams
   export type PositionalParams = _PositionalParams
   export type ValueType = _ValueType
@@ -95,4 +100,4 @@ namespace Utils {
   export import DataType = _DataType;
 }
 
-export { NodeKwil, WebKwil, KwilSigner, Types, Utils, Client };
+export { NodeKwil, WebKwil, KwilSigner, Types, Utils, Client, EnvironmentType };

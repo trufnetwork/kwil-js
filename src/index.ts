@@ -39,6 +39,9 @@ import { TransferBody as _TransferBody } from './funder/funding_types';
 import { Config as _Config, KwilConfig as _KwilConfig } from './api_client/config';
 import { EthSigner as _EthSigner } from './core/signature';
 import { Kwil as _Kwil } from './client/kwil';
+import { formatEncodedValue as _formatEncodedValue } from './utils/parameterEncoding';
+import { encodeEncodedValue as _encodeEncodedValue } from './utils/kwilEncoding';
+import { EncodedValue as _EncodedValue } from './core/payload';
 
 namespace Types {
   export type TxReceipt = _TxReceipt;
@@ -65,6 +68,7 @@ namespace Types {
   export type NamedParams = _NamedParams
   export type PositionalParams = _PositionalParams
   export type ValueType = _ValueType
+  export type EncodedValue = _EncodedValue
 
   // below are deprecated and can be removed on next release (kwil-js v0.10)
   export type Database = _Database;
@@ -98,6 +102,18 @@ namespace Utils {
    * `DataType` holds the different data types that can be asserted as action inputs.
    */
   export import DataType = _DataType;
+
+  /**
+   * Converts a JavaScript value into an EncodedValue structure.
+   * Used for encoding arguments for Kwil actions.
+   */
+  export const formatEncodedValue = _formatEncodedValue;
+
+  /**
+   * Serializes an EncodedValue into bytes using kwil-db's MarshalBinary format.
+   * Used for advanced argument encoding scenarios.
+   */
+  export const encodeEncodedValue = _encodeEncodedValue;
 }
 
 export { NodeKwil, WebKwil, KwilSigner, Types, Utils, Client, EnvironmentType };

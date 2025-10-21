@@ -51,8 +51,15 @@ export function encodeRawStatementParameters(params: QueryParams) {
   });
 }
 
-// Used by the executeSql() method and the encodeActionInputs() method
-function formatEncodedValue(val: ValueType | ValueType[], o?: DataInfo): EncodedValue {
+/**
+ * Converts a JavaScript value into an EncodedValue structure.
+ * This is the primary function for encoding values for use with Kwil actions.
+ *
+ * @param val - The value to encode (string, number, boolean, Uint8Array, null, or arrays of these)
+ * @param o - Optional DataInfo to override type detection
+ * @returns EncodedValue ready for serialization
+ */
+export function formatEncodedValue(val: ValueType | ValueType[], o?: DataInfo): EncodedValue {
   const base = formatDataType(val, o);
 
   if (Array.isArray(val)) {

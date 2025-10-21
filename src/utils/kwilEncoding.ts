@@ -154,7 +154,14 @@ export function encodeTransfer(transfer: TransferPayload): string {
   return bytesToBase64(concatBytes(encodedVersion, encodedTo, encodedAmount));
 }
 
-function encodeEncodedValue(ev: EncodedValue): Uint8Array {
+/**
+ * Encodes an EncodedValue into bytes using kwil-db's MarshalBinary format.
+ * This is used internally for action encoding and exported for advanced use cases.
+ *
+ * @param ev - The EncodedValue to encode
+ * @returns Serialized bytes matching kwil-db's EncodedValue.MarshalBinary() format
+ */
+export function encodeEncodedValue(ev: EncodedValue): Uint8Array {
   // To encode an `EncodedValue` we need to concat a bytes array with all of the necessary elements
   // The order is important.
 

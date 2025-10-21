@@ -266,8 +266,11 @@ export default class Client extends Api {
   }
 
   protected async txInfoClient(tx_hash: string): Promise<GenericResponse<TxInfoReceipt>> {
+    // NOTE: The kwil node expects transaction hashes in hexadecimal format.
+    // Send tx_hash as-is without converting to base64, which would cause
+    // "invalid hash length: expected 64, got 44" errors from the node.
     const body = this.buildJsonRpcRequest<TxQueryRequest>(JSONRPCMethod.METHOD_TX_QUERY, {
-      tx_hash: hexToBase64(tx_hash),
+      tx_hash: tx_hash,
     });
 
     const res = await super.post<JsonRPCResponse<TxQueryResponse>>(`/rpc/v1`, body);

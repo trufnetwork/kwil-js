@@ -114,8 +114,10 @@ function isValidHex(str: string): boolean {
 }
 
 export function base64ToHex(base64: string): HexString {
-    // If the input is already a valid hex string, return it as-is
-    // This handles cases where the node returns hex instead of base64
+    // NOTE: The kwil node returns transaction hashes as hexadecimal strings, not base64.
+    // To maintain backward compatibility, we check if the input
+    // is already hex and return it as-is. This prevents double-encoding (hex→base64→hex)
+    // which previously corrupted 64-char hashes into 96-char garbage values.
     if (isValidHex(base64)) {
         // Strip 0x prefix if present to return consistent format
         return (base64.startsWith('0x') ? base64.slice(2) : base64) as HexString;

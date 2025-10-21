@@ -101,7 +101,27 @@ export function hexToBytes(hex: string): Uint8Array {
     return bytes;
 }
 
+/**
+ * Helper function to check if a string is valid hexadecimal
+ */
+function isValidHex(str: string): boolean {
+    // Strip 0x prefix if present
+    const hexStr = str.startsWith('0x') ? str.slice(2) : str;
+
+    // Check if string only contains hex characters (0-9, a-f, A-F)
+    // and has even length (since each byte = 2 hex chars)
+    return /^[0-9a-fA-F]+$/.test(hexStr) && hexStr.length > 0 && hexStr.length % 2 === 0;
+}
+
 export function base64ToHex(base64: string): HexString {
+    // If the input is already a valid hex string, return it as-is
+    // This handles cases where the node returns hex instead of base64
+    if (isValidHex(base64)) {
+        // Strip 0x prefix if present to return consistent format
+        return (base64.startsWith('0x') ? base64.slice(2) : base64) as HexString;
+    }
+
+    // Otherwise, treat it as base64 and convert to hex
     return bytesToHex(base64ToBytes(base64));
 }
 

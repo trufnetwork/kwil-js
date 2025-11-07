@@ -220,6 +220,11 @@ export function encodeValue(value: ValueType, o?: VarType): Uint8Array {
 
   // handle Uint8Array case
   if (value instanceof Uint8Array) {
+    // Treat empty Uint8Array as NULL for BYTEA type
+    // This allows JavaScript code to pass new Uint8Array(0) to represent BYTEA NULL
+    if (value.length === 0) {
+      return encodeNull();
+    }
     return encodeNotNull(value);
   }
 
@@ -263,8 +268,14 @@ function overrideValue(v: ValueType, o: VarType): Uint8Array {
       return encodeNotNull(stringToBytes(v.toString()));
     case VarType.UUID:
       return encodeNotNull(convertUuidToBytes(v as string));
-    case VarType.BYTEA:
-      return encodeNotNull(v as Uint8Array);
+    case VarType.BYTEA: {
+      // Treat empty Uint8Array as NULL for consistency with normal encoding path
+      const byteaValue = v as Uint8Array;
+      if (byteaValue.length === 0) {
+        return encodeNull();
+      }
+      return encodeNotNull(byteaValue);
+    }
     default:
       throw new Error('invalid scalar value');
   }

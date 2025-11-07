@@ -220,6 +220,11 @@ export function encodeValue(value: ValueType, o?: VarType): Uint8Array {
 
   // handle Uint8Array case
   if (value instanceof Uint8Array) {
+    // Treat empty Uint8Array as NULL for BYTEA type
+    // This allows JavaScript code to pass new Uint8Array(0) to represent BYTEA NULL
+    if (value.length === 0) {
+      return encodeNull();
+    }
     return encodeNotNull(value);
   }
 

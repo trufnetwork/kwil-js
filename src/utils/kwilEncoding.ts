@@ -269,7 +269,12 @@ function overrideValue(v: ValueType, o: VarType): Uint8Array {
     case VarType.UUID:
       return encodeNotNull(convertUuidToBytes(v as string));
     case VarType.BYTEA:
-      return encodeNotNull(v as Uint8Array);
+      // Treat empty Uint8Array as NULL for consistency with normal encoding path
+      const byteaValue = v as Uint8Array;
+      if (byteaValue.length === 0) {
+        return encodeNull();
+      }
+      return encodeNotNull(byteaValue);
     default:
       throw new Error('invalid scalar value');
   }

@@ -22,6 +22,7 @@
     "src/funder/*.ts",
     "src/client/kwil.ts",
     "src/api_client/config.ts",
+    "src/api_client/admin_client.ts",
     "src/utils/*.ts",
   ]
 }

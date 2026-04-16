@@ -33,6 +33,8 @@ import { KwilSigner } from './core/kwilSigner';
 import { EnvironmentType } from './core/enums';
 import { QueryParams as _QueryParams, ValueType as _ValueType } from './utils/types';
 import Client from './api_client/client';
+import { AdminClient } from './api_client/admin_client';
+import { AdminClientConfig as _AdminClientConfig } from './api_client/admin_client';
 import { AuthSuccess as _AuthSuccess, LogoutResponse as _LogoutResponse} from './core/auth';
 import { AuthBody as _AuthBody } from './core/signature';
 import { TransferBody as _TransferBody } from './funder/funding_types';
@@ -69,6 +71,7 @@ namespace Types {
   export type PositionalParams = _PositionalParams
   export type ValueType = _ValueType
   export type EncodedValue = _EncodedValue
+  export type AdminClientConfig = _AdminClientConfig
 
   // below are deprecated and can be removed on next release (kwil-js v0.10)
   export type Database = _Database;
@@ -116,4 +119,4 @@ namespace Utils {
   export const encodeEncodedValue = _encodeEncodedValue;
 }
 
-export { NodeKwil, WebKwil, KwilSigner, Types, Utils, Client, EnvironmentType };
+export { NodeKwil, WebKwil, KwilSigner, Types, Utils, Client, AdminClient, EnvironmentType };

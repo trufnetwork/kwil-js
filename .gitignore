@@ -18,3 +18,4 @@ testapp/node_modules
 # Act testing files
 .secrets.act
 .act-events
+CLAUDE.md

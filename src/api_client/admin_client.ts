@@ -102,11 +102,16 @@ export class AdminClient {
       );
     }
 
-    if (!config.adminProvider) {
+    if (!config) {
+      throw new Error('AdminClientConfig is required.');
+    }
+
+    const trimmedProvider = (config.adminProvider || '').trim();
+    if (!trimmedProvider) {
       throw new Error('No admin provider URL provided in AdminClientConfig.');
     }
 
-    this.adminProvider = config.adminProvider;
+    this.adminProvider = trimmedProvider;
     this.timeout = config.timeout ?? 10000;
     this.logging = config.logging ?? false;
     this.logger = config.logger ?? console.log;

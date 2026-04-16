@@ -17,15 +17,44 @@ describe('AdminClient', () => {
       expect(client).toBeInstanceOf(AdminClient);
     });
 
+    it('should throw if config is undefined', () => {
+      expect(() => new AdminClient(undefined as any)).toThrow('AdminClientConfig is required');
+    });
+
+    it('should throw if config is null', () => {
+      expect(() => new AdminClient(null as any)).toThrow('AdminClientConfig is required');
+    });
+
     it('should throw if adminProvider is empty', () => {
       expect(() => new AdminClient({ adminProvider: '' })).toThrow(
         'No admin provider URL provided'
       );
     });
 
-    it('should use default timeout of 10000ms', () => {
+    it('should throw if adminProvider is whitespace-only', () => {
+      expect(() => new AdminClient({ adminProvider: '   ' })).toThrow(
+        'No admin provider URL provided'
+      );
+    });
+
+    it('should trim whitespace from adminProvider', async () => {
+      postMock.mockResolvedValue({
+        status: 200,
+        data: { jsonrpc: '2.0', id: 1, result: 'ok' },
+      });
+
+      const client = new AdminClient({ adminProvider: '  http://localhost:8485  ' });
+      await client.callMethod('admin.status', {});
+
+      // Axios.create should receive the trimmed URL as baseURL
+      const Axios = require('axios');
+      expect(Axios.create).toHaveBeenCalledWith(
+        expect.objectContaining({ baseURL: 'http://localhost:8485' })
+      );
+    });
+
+    it('should construct with default options when only adminProvider is given', () => {
       const client = new AdminClient({ adminProvider: 'http://localhost:8485' });
-      // We can't easily inspect private fields, but the constructor should not throw
       expect(client).toBeInstanceOf(AdminClient);
     });
   });

@@ -19,3 +19,6 @@ testapp/node_modules
 .secrets.act
 .act-events
 CLAUDE.md
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat

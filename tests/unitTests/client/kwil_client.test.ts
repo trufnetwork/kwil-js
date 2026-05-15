@@ -1,4 +1,4 @@
-import { getMock, postMock } from "../api_client/api-utils";
+import { getMock, mockedAxios, postMock } from "../api_client/api-utils";
 import { Msg } from "../../../src/core/message";
 import { stringToBytes, stringToHex } from "../../../src/utils/serial";
 import { bytesToBase64 } from "../../../src/utils/base64";
@@ -21,6 +21,7 @@ describe('Kwil', () => {
 
     beforeEach(() => {
         kwil = new TestKwil();
+        mockedAxios.create.mockClear();
         getMock.mockReset();
         postMock.mockReset();
     });
@@ -62,6 +63,79 @@ describe('Kwil', () => {
             expect(result.data?.nonce).toBe(mockAccount.nonce);
         })
     })
+
+    describe('KGW cookie session', () => {
+        it('should expose the current KGW cookie', () => {
+            expect(kwil.getKgwCookie()).toBeUndefined();
+        });
+
+        it('should authenticate, store the returned KGW cookie, and attach it to later Node requests', async () => {
+            const cookie = 'kgw_session=fresh; Path=/';
+            const signer = new KwilSigner(
+                async () => new Uint8Array([1, 2, 3]),
+                new Uint8Array([4, 5, 6]),
+                'ed25519'
+            );
+
+            postMock
+                .mockResolvedValueOnce({
+                    status: 200,
+                    data: {
+                        jsonrpc: '2.0',
+                        id: 1,
+                        result: {
+                            nonce: '123456',
+                            statement: '',
+                            issue_at: '2026-05-15T14:30:00Z',
+                            expiration_time: '2026-05-15T14:35:00Z',
+                            chain_id: 'doesnt matter',
+                            domain: 'doesnt matter',
+                            version: '1',
+                            uri: 'doesnt matter/auth',
+                        },
+                    },
+                })
+                .mockResolvedValueOnce({
+                    status: 200,
+                    headers: {
+                        'set-cookie': [cookie],
+                    },
+                    data: {
+                        jsonrpc: '2.0',
+                        id: 2,
+                        result: {
+                            result: 'authenticated',
+                        },
+                    },
+                })
+                .mockResolvedValueOnce({
+                    status: 200,
+                    data: {
+                        jsonrpc: '2.0',
+                        id: 3,
+                        result: {
+                            id: {
+                                identifier: address,
+                                key_type: 'secp256k1',
+                            },
+                            balance: 'mockBalance',
+                            nonce: 123,
+                        },
+                    },
+                });
+
+            await expect(kwil.authenticateKGWAndSetCookie(signer)).resolves.toBe(cookie);
+            expect(kwil.getKgwCookie()).toBe(cookie);
+
+            await kwil.getAccount(address);
+
+            const createCalls = mockedAxios.create.mock.calls;
+            const latestConfig = createCalls[createCalls.length - 1][0];
+            const latestHeaders = latestConfig?.headers as Record<string, string> | undefined;
+
+            expect(latestHeaders?.Cookie).toBe(cookie);
+        });
+    });
 
 
 

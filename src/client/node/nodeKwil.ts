@@ -7,7 +7,7 @@ import { GenericResponse } from '../../core/resreq';
 import { Kwil } from '../kwil';
 
 export class NodeKwil extends Kwil<EnvironmentType.NODE> {
-  private tempCookie: string | undefined;
+  private tempCookie?: { previous: string | undefined };
 
   constructor(opts: Config) {
     super(opts);
@@ -37,7 +37,7 @@ export class NodeKwil extends Kwil<EnvironmentType.NODE> {
       // when manually passing cookies, the user is expected to pass the cookie for each request
       // if a user does not pass a cookie for a subsequent request, the cookie will be reset to the original cookie
       if (this.tempCookie) {
-        this.resetTempCookie(this.tempCookie);
+        this.resetTempCookie();
       }
     };
 
@@ -50,22 +50,44 @@ export class NodeKwil extends Kwil<EnvironmentType.NODE> {
   }
 
   /**
+   * Returns the KGW session cookie currently attached to Node requests.
+   */
+  public getKgwCookie(): string | undefined {
+    return this.cookie;
+  }
+
+  /**
+   * Authenticates with KGW, stores the returned session cookie, and returns it.
+   */
+  public async authenticateKGWAndSetCookie(signer: KwilSigner): Promise<string> {
+    const res = await this.auth.authenticateKGW(signer);
+    const cookie = res.data?.cookie;
+
+    if (!cookie) {
+      throw new Error('No cookie received from gateway. An error occurred with authentication.');
+    }
+
+    this.cookie = cookie;
+    return cookie;
+  }
+
+  /**
    * set the temp cookie to reset it after the call
    *
    * @param {string} cookie - The temporary cookie
    * @returns the temporary cookie to handle for Node
    */
   private setTemporaryCookie(cookie: string): void {
-    this.tempCookie = this.cookie;
+    this.tempCookie = { previous: this.cookie };
     this.cookie = cookie;
   }
 
   /**
    * Resets the temporary cookie
    *
-   * @param {string} tempCookie - the temporary cookie to be reset
    */
-  private resetTempCookie(tempCookie: string): void {
-    this.cookie = tempCookie;
+  private resetTempCookie(): void {
+    this.cookie = this.tempCookie?.previous;
+    this.tempCookie = undefined;
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@idos-network/kwil-js",
-  "version": "0.1.4",
+  "version": "0.1.3",
   "description": "",
   "main": "./dist/index.js",
   "module": "./dist-esm/index.mjs",
@@ -11,6 +11,21 @@
       "import": "./dist-esm/index.mjs",
       "require": "./dist/index.js",
       "types": "./dist/index.d.ts"
+    },
+    "./dist/api_client/config": {
+      "import": "./dist-esm/api_client/config.mjs",
+      "require": "./dist/api_client/config.js",
+      "types": "./dist/api_client/config.d.ts"
+    },
+    "./dist/core/action": {
+      "import": "./dist-esm/core/action.mjs",
+      "require": "./dist/core/action.js",
+      "types": "./dist/core/action.d.ts"
+    },
+    "./dist/core/database": {
+      "import": "./dist-esm/core/database.mjs",
+      "require": "./dist/core/database.js",
+      "types": "./dist/core/database.d.ts"
     },
     "./package.json": "./package.json"
   },

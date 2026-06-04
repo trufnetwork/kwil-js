@@ -9,23 +9,23 @@
   "exports": {
     ".": {
       "import": "./dist-esm/index.mjs",
-      "require": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "types": "./dist/index.d.ts",
+      "require": "./dist/index.js"
     },
     "./dist/api_client/config": {
       "import": "./dist-esm/api_client/config.mjs",
-      "require": "./dist/api_client/config.js",
-      "types": "./dist/api_client/config.d.ts"
+      "types": "./dist/api_client/config.d.ts",
+      "require": "./dist/api_client/config.js"
     },
     "./dist/core/action": {
       "import": "./dist-esm/core/action.mjs",
-      "require": "./dist/core/action.js",
-      "types": "./dist/core/action.d.ts"
+      "types": "./dist/core/action.d.ts",
+      "require": "./dist/core/action.js"
     },
     "./dist/core/database": {
       "import": "./dist-esm/core/database.mjs",
-      "require": "./dist/core/database.js",
-      "types": "./dist/core/database.d.ts"
+      "types": "./dist/core/database.d.ts",
+      "require": "./dist/core/database.js"
     },
     "./package.json": "./package.json"
   },

@@ -1,7 +1,7 @@
 import { postMock } from './api-utils';
 import Client from '../../../src/api_client/client';
 import { Transaction, Txn } from '../../../src/core/tx';
-import { CallClientResponse, Message } from '../../../src/core/message';
+import { CallClientResponse, Message, Msg } from '../../../src/core/message';
 import { BytesEncodingStatus } from '../../../src/core/enums';
 import { stringToBytes } from '../../../dist/utils/serial';
 import { bytesToBase64 } from '../../../src/utils/base64';
@@ -137,6 +137,99 @@ describe('Client', () => {
         it('should throw an error when broadcasting an unsigned transaction', async () => {
             const tx = Txn.create<BytesEncodingStatus.BASE64_ENCODED>(() => {}); // Assuming this transaction is unsigned by default
             await expect(client.broadcast(tx)).rejects.toThrow('Tx must be signed before broadcasting.');
+        });
+    });
+
+    describe('call', () => {
+        const callMessage = Msg.create((msg) => {
+            msg.body.payload = 'payload';
+        });
+
+        const emptyQueryResult = {
+            column_names: [] as string[],
+            column_types: [] as { name: string; is_array: boolean }[],
+            values: [] as unknown[],
+        };
+
+        it('should expose action-level error when CallResult.error is set', async () => {
+            postMock.mockResolvedValue({
+                status: 200,
+                data: {
+                    jsonrpc: '2.0',
+                    id: 1,
+                    result: {
+                        query_result: emptyQueryResult,
+                        logs: 'some logs',
+                        error: 'Unauthorized gateway',
+                    },
+                },
+            });
+
+            const result = await client.call(callMessage);
+
+            expect(result.status).toBe(200);
+            expect(result.data?.error).toBe('Unauthorized gateway');
+            expect(result.data?.result).toEqual([]);
+            expect(result.data?.logs).toBe('some logs');
+        });
+
+        it('should return undefined error when CallResult.error is null', async () => {
+            postMock.mockResolvedValue({
+                status: 200,
+                data: {
+                    jsonrpc: '2.0',
+                    id: 1,
+                    result: {
+                        query_result: emptyQueryResult,
+                        error: null,
+                    },
+                },
+            });
+
+            const result = await client.call(callMessage);
+
+            expect(result.data?.error).toBeUndefined();
+            expect(result.data?.result).toEqual([]);
+        });
+
+        it('should return undefined error when CallResult.error is absent', async () => {
+            postMock.mockResolvedValue({
+                status: 200,
+                data: {
+                    jsonrpc: '2.0',
+                    id: 1,
+                    result: {
+                        query_result: emptyQueryResult,
+                    },
+                },
+            });
+
+            const result = await client.call(callMessage);
+
+            expect(result.data?.error).toBeUndefined();
+            expect(result.data?.result).toEqual([]);
+        });
+
+        it('should parse rows when CallResult.error is absent', async () => {
+            postMock.mockResolvedValue({
+                status: 200,
+                data: {
+                    jsonrpc: '2.0',
+                    id: 1,
+                    result: {
+                        query_result: {
+                            column_names: ['title'],
+                            column_types: [{ name: 'text', is_array: false }],
+                            values: [['row1']],
+                        },
+                    },
+                },
+            });
+
+            const result = await client.call(callMessage);
+
+            expect(result.data?.error).toBeUndefined();
+            expect(result.data?.result).toEqual([{ title: 'row1' }]);
         });
     });
 });

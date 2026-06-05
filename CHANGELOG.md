@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## [Unreleased]
+
+### Bug Fixes
+
+* expose `CallResult.error` from `call()` responses so action-level errors are distinguishable from empty result sets
+
 ### [0.9.5](https://github.com/trufnetwork/kwil-js/compare/v0.9.3...v0.9.5) (2025-04-01)
 
 

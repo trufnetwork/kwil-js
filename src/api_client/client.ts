@@ -307,12 +307,11 @@ export default class Client extends Api {
       return errorResponse;
     }
 
-    return checkRes(res, (r) => {
-      return {
-        result: this.parseQueryResponse(r.result.query_result),
-        logs: r.result.logs
-      }
-    });
+    return checkRes(res, (r) => ({
+      result: this.parseQueryResponse(r.result.query_result),
+      logs: r.result.logs,
+      error: r.result.error ?? undefined,
+    }));
   }
 
   private buildJsonRpcRequest<T>(method: JSONRPCMethod, params: T): JsonRPCRequest<T> {

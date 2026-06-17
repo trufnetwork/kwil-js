@@ -15,7 +15,12 @@ import { sha256BytesToBytes } from '../utils/crypto';
 import { objects } from '../utils/objects';
 import { bytesToHex, stringToBytes } from '../utils/serial';
 import { strings } from '../utils/strings';
-import { encodeActionExecution, encodeRawStatement, encodeTransfer } from '../utils/kwilEncoding';
+import {
+  encodeActionExecution,
+  encodeMAAExec,
+  encodeRawStatement,
+  encodeTransfer,
+} from '../utils/kwilEncoding';
 
 export interface PayloadTxOptions {
   payload: AllPayloads;
@@ -230,7 +235,8 @@ Kwil Chain ID: ${tx.body.chain_id}
   private encodePayload(payloadType: PayloadType, payload: AllPayloads): string {
     switch (payloadType) {
       case PayloadType.EXECUTE_ACTION:
-        if (!('action' in payload && 'arguments' in payload)) {
+        // 'dbid' distinguishes an action payload from a MAAExecPayload, which also has action/arguments.
+        if (!('dbid' in payload && 'action' in payload && 'arguments' in payload)) {
           throw new Error('Invalid payload type for EXECUTE_ACTION');
         }
         return encodeActionExecution(payload);
@@ -246,6 +252,12 @@ Kwil Chain ID: ${tx.body.chain_id}
           throw new Error('Invalid payload type for RAW_STATEMENT');
         }
         return encodeRawStatement(payload);
+
+      case PayloadType.MAA_EXEC:
+        if (!('maaAddress' in payload && 'action' in payload)) {
+          throw new Error('Invalid payload type for MAA_EXEC');
+        }
+        return encodeMAAExec(payload);
 
       default:
         throw new Error(`Unsupported payload type: ${payloadType}`);

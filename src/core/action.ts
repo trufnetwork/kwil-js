@@ -158,6 +158,46 @@ export interface ActionBody {
 }
 
 /**
+ * MAAExecBody is the interface for running an inner action AS an agent wallet with the
+ * `kwil.maaExec()` method (a `maa_exec` transaction). The outer signer is the wallet's restricted
+ * agent or unrestricted owner; the node rewrites `@caller` to the wallet after checking the rule's
+ * role and allow-list.
+ */
+export interface MAAExecBody {
+  /**
+   * maaAddress is the 20-byte agent-wallet (MAA) address whose identity the inner action assumes,
+   * given as a 0x-hex string or raw bytes.
+   */
+  maaAddress: string | Uint8Array;
+  /**
+   * action is the name of the inner action to run as the wallet.
+   */
+  action: string;
+  /**
+   * inputs are the positional arguments for the inner action (a single call).
+   */
+  inputs?: PositionalParams;
+  /**
+   * types optionally pins the data type of each positional input (by position). Unlike `execute`,
+   * `maa_exec` is not validated against the action schema before broadcast, so pin a type here for
+   * any argument whose JS value would otherwise infer the wrong kwil type (e.g. numeric/uuid/bytea).
+   */
+  types?: DataInfo[];
+  /**
+   * namespace is the namespace of the inner action. Defaults to "main".
+   */
+  namespace?: string;
+  /**
+   * description is an optional description shown in the signature message.
+   */
+  description?: string;
+  /**
+   * nonce is an optional nonce value for the transaction.
+   */
+  nonce?: number;
+}
+
+/**
  * CallBody is the interface for calling an action with the `kwil.call()` method.
  */
 export interface CallBody {

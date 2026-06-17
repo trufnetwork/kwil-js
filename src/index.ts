@@ -2,12 +2,13 @@ import { NodeKwil } from './client/node/nodeKwil';
 import { WebKwil } from './client/web/webKwil';
 import { generateDBID as _generateDBID } from './utils/dbid';
 import { TxReceipt as _TxReceipt } from './core/tx';
-import { 
+import {
   ActionInput as _ActionInput,
   ActionBody as _ActionBody, CallBody as _CallBody,
   CallBodyNode as _CallBodyNode,
+  MAAExecBody as _MAAExecBody,
   NamedParams as _NamedParams,
-  PositionalParams as _PositionalParams 
+  PositionalParams as _PositionalParams
 } from './core/action';
 import { Transaction as _Transaction } from './core/tx';
 import {
@@ -42,7 +43,7 @@ import { Config as _Config, KwilConfig as _KwilConfig } from './api_client/confi
 import { EthSigner as _EthSigner } from './core/signature';
 import { Kwil as _Kwil } from './client/kwil';
 import { formatEncodedValue as _formatEncodedValue } from './utils/parameterEncoding';
-import { encodeEncodedValue as _encodeEncodedValue } from './utils/kwilEncoding';
+import { encodeEncodedValue as _encodeEncodedValue, encodeMAAExec as _encodeMAAExec } from './utils/kwilEncoding';
 import { EncodedValue as _EncodedValue } from './core/payload';
 
 namespace Types {
@@ -56,6 +57,7 @@ namespace Types {
   export type ActionBody = _ActionBody;
   export type CallBody = _CallBody;
   export type CallBodyNode = _CallBodyNode;
+  export type MAAExecBody = _MAAExecBody;
   export type QueryParams = _QueryParams;
   export type ChainInfo = _ChainInfo;
   export type ChainInfoOpts = _ChainInfoOpts
@@ -117,6 +119,13 @@ namespace Utils {
    * Used for advanced argument encoding scenarios.
    */
   export const encodeEncodedValue = _encodeEncodedValue;
+
+  /**
+   * Serializes a `maa_exec` payload (run an inner action as an agent wallet) to the base64 wire
+   * format, byte-identical to kwil-db's `core/types.MAAExec.MarshalBinary`. Exposed for advanced
+   * use; most callers should use `kwil.maaExec()`.
+   */
+  export const encodeMAAExec = _encodeMAAExec;
 }
 
 export { NodeKwil, WebKwil, KwilSigner, Types, Utils, Client, AdminClient, EnvironmentType };

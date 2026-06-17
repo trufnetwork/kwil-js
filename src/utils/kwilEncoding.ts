@@ -2,6 +2,7 @@ import { DataInfo } from '../core/database';
 import { AccountId } from '../core/network';
 import {
   EncodedValue,
+  MAAExecPayload,
   RawStatementPayload,
   TransferPayload,
   UnencodedActionPayload,
@@ -152,6 +153,53 @@ export function encodeTransfer(transfer: TransferPayload): string {
   );
 
   return bytesToBase64(concatBytes(encodedVersion, encodedTo, encodedAmount));
+}
+
+/**
+ * Encodes a `MAAExecPayload` (the `maa_exec` transaction) to match kwil-db's
+ * `core/types.MAAExec.MarshalBinary`. The layout is a consensus contract — the node, kwil-js, and the
+ * language SDKs must all serialize it identically — so this is asserted byte-for-byte against the Go
+ * golden vector (`core/types/payloads_maa_test.go`). All integers are little-endian.
+ *
+ * Layout (little-endian throughout):
+ *   uint16 version = 0
+ *   WriteBytes(maaAddress)            // 4-byte length prefix + raw bytes
+ *   WriteString(namespace)            // 4-byte length prefix + utf-8 bytes
+ *   WriteString(action)               // 4-byte length prefix + utf-8 bytes
+ *   uint16 numArgs
+ *   for each arg: WriteBytes(EncodedValue.MarshalBinary())   // a single call, like an action call
+ */
+export function encodeMAAExec(payload: MAAExecPayload): string {
+  const maaExecVersion = 0;
+
+  const encodedVersion = numberToUint16LittleEndian(maaExecVersion);
+  const encodedMaaAddress = prefixBytesLength(payload.maaAddress);
+  const encodedNamespace = prefixBytesLength(stringToBytes(payload.namespace));
+  const encodedAction = prefixBytesLength(stringToBytes(payload.action));
+
+  const encodedNumArgs = numberToUint16LittleEndian(
+    payload.arguments ? payload.arguments.length : 0
+  );
+  let actionArguments: Uint8Array = new Uint8Array();
+
+  payload.arguments?.forEach((a: EncodedValue) => {
+    const aBytes = encodeEncodedValue(a);
+    const prefixedABytes = prefixBytesLength(aBytes);
+
+    actionArguments = concatBytes(actionArguments, prefixedABytes);
+  });
+
+  const encodedActionArguments = concatBytes(encodedNumArgs, actionArguments);
+
+  return bytesToBase64(
+    concatBytes(
+      encodedVersion,
+      encodedMaaAddress,
+      encodedNamespace,
+      encodedAction,
+      encodedActionArguments
+    )
+  );
 }
 
 /**

@@ -22,7 +22,28 @@ import { AccountId } from './network';
 export type AllPayloads =
   | UnencodedActionPayload<PayloadType.CALL_ACTION | PayloadType.EXECUTE_ACTION>
   | TransferPayload
-  | RawStatementPayload;
+  | RawStatementPayload
+  | MAAExecPayload;
+
+/**
+ * `MAAExecPayload` is the wire payload for a `maa_exec` transaction: run one inner action AS a
+ * Modular Agent Address (agent wallet). It is a distinct transaction payload, not an action call —
+ * the outer signer (the wallet's restricted agent or unrestricted owner) signs it, and the node
+ * rewrites `@caller` to `maaAddress` after checking the rule's role and allow-list.
+ *
+ * The field order and types mirror kwil-db's `core/types.MAAExec`; `encodeMAAExec` must serialize it
+ * byte-for-byte identically to that struct's `MarshalBinary` (the layout is a consensus contract).
+ */
+export interface MAAExecPayload {
+  // maaAddress is the 20-byte agent-wallet address whose identity the inner action assumes.
+  maaAddress: Uint8Array;
+  // namespace is the namespace of the inner action (e.g. "main").
+  namespace: string;
+  // action is the inner action name to execute as the wallet.
+  action: string;
+  // arguments are the inner action's arguments (a single call).
+  arguments: EncodedValue[];
+}
 
 export type UnencodedActionPayload<T extends PayloadType.CALL_ACTION | PayloadType.EXECUTE_ACTION> =
   {

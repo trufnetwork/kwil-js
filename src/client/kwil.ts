@@ -12,7 +12,7 @@ import {
   EnvironmentType,
   PayloadType,
 } from '../core/enums';
-import { ActionBody, CallBody, isNamedParam, NamedParams, PositionalParams, transformActionInput } from '../core/action';
+import { ActionBody, CallBody, isNamedParam, MAAExecBody, NamedParams, PositionalParams, transformActionInput } from '../core/action';
 import { KwilSigner } from '../core/kwilSigner';
 import { wrap } from './intern';
 import { Funder } from '../funder/funder';
@@ -21,14 +21,14 @@ import { Action } from '../transaction/action';
 import { Message, MsgReceipt } from '../core/message';
 import { AuthBody } from '../core/signature';
 import { SelectQueryRequest } from '../core/jsonrpc';
-import { encodeParameters, encodeRawStatementParameters } from '../utils/parameterEncoding';
+import { encodeParameters, encodeRawStatementParameters, formatEncodedValue } from '../utils/parameterEncoding';
 import { generateDBID } from '../utils/dbid';
 import { Base64String, QueryParams } from '../utils/types';
 import { PayloadTx } from '../transaction/payloadTx';
-import { RawStatementPayload } from '../core/payload';
+import { MAAExecPayload, RawStatementPayload } from '../core/payload';
 import { resolveNamespace, validateNamespace } from '../utils/namespace';
 import { inferKeyType } from '../utils/keys';
-import { bytesToHex } from '../utils/serial';
+import { bytesToHex, hexToBytes } from '../utils/serial';
 import { LRUCache } from 'lru-cache';
 
 /**
@@ -308,6 +308,66 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
       identifier: signer.identifier,
       signer: signer.signer,
       signatureType: signer.signatureType,
+    }).buildTx();
+
+    return await this.broadcastClient(
+      transaction,
+      synchronous ? BroadcastSyncType.COMMIT : BroadcastSyncType.SYNC
+    );
+  }
+
+  /**
+   * Runs a single inner action AS an agent wallet — a `maa_exec` transaction (Modular Agent
+   * Addresses). The signer must be the wallet's restricted agent or its unrestricted owner; the node
+   * looks up the rule bound to the wallet, enforces the allow-list for the signer's role, and
+   * re-enters the engine with `@caller` rewritten to the wallet. This is a distinct transaction
+   * payload, not an action call, so it does not validate against the action schema before broadcast.
+   *
+   * @param maaExecBody - The agent-wallet address, the inner action, and its positional inputs.
+   * @param signer - The component key (restricted agent or unrestricted owner) that signs the tx.
+   * @param synchronous - When true, waits for the tx to be included in a block before resolving.
+   * @returns Promise resolving to the transaction receipt.
+   */
+  public async maaExec(
+    maaExecBody: MAAExecBody,
+    signer: KwilSigner,
+    synchronous?: boolean
+  ): Promise<GenericResponse<TxReceipt>> {
+    if (!maaExecBody.action) {
+      throw new Error('action is required in maaExecBody');
+    }
+
+    const maaAddress =
+      typeof maaExecBody.maaAddress === 'string'
+        ? hexToBytes(maaExecBody.maaAddress)
+        : maaExecBody.maaAddress;
+
+    if (maaAddress.length !== 20) {
+      throw new Error(`maaAddress must be 20 bytes, got ${maaAddress.length}`);
+    }
+
+    const inputs = maaExecBody.inputs ?? [];
+    const types = maaExecBody.types;
+    const encodedArguments = inputs.map((value, i) => formatEncodedValue(value, types?.[i]));
+
+    const payload: MAAExecPayload = {
+      maaAddress,
+      // mirror the node's empty-namespace normalization
+      namespace: maaExecBody.namespace || 'main',
+      action: maaExecBody.action,
+      arguments: encodedArguments,
+    };
+
+    const transaction = await PayloadTx.createTx(this, {
+      chainId: this.chainId,
+      description:
+        maaExecBody.description || `Executing agent-wallet action: ${maaExecBody.action}`,
+      payload,
+      payloadType: PayloadType.MAA_EXEC,
+      identifier: signer.identifier,
+      signer: signer.signer,
+      signatureType: signer.signatureType,
+      nonce: maaExecBody.nonce,
     }).buildTx();
 
     return await this.broadcastClient(

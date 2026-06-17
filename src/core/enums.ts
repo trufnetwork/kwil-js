@@ -44,6 +44,7 @@ export enum PayloadType {
   CALL_ACTION = 'call_action',
   TRANSFER = 'transfer',
   RAW_STATEMENT = 'raw_statement',
+  MAA_EXEC = 'maa_exec',
 }
 
 export enum SerializationType {

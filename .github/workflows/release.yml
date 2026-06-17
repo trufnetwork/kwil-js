@@ -94,95 +94,27 @@ jobs:
         run: pnpm run build
 
       # ------------------------------------------------------------------
-      # 3. Create release branch and update package.json
+      # 3. Bump the version locally (for the build & publish only)
       # ------------------------------------------------------------------
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
+      # We intentionally do NOT commit the bump back to main. `main` requires a reviewed pull request
+      # (classic branch protection) and GitHub Actions cannot create or approve PRs, so a single
+      # release run cannot land a commit on main. As with the rc/dev channels, the released version
+      # lives in the git tag + the published package; bump main's package.json via a normal PR when
+      # you want the repo default to track the latest release.
       - name: Bump package.json version
         run: |
           pnpm version "$(echo ${{ steps.version.outputs.version }} | sed 's/^v//')" --no-git-tag-version
 
-      # The "Require verified commits" ruleset (targets ~ALL branches, no bypass) rejects the
-      # runner's unsigned commits, so for the latest channel we create the version-bump commit
-      # through the GraphQL createCommitOnBranch mutation. Commits made that way are signed with
-      # GitHub's web-flow key (Verified), satisfying the ruleset with no signing-key secret. NOTE:
-      # the REST Contents API does NOT sign commits, so it cannot be used here. A bump touches only
-      # package.json, so a single-file addition suffices.
-      - name: Commit version bump via API (verified)
-        if: ${{ github.event.inputs.dist_tag == 'latest' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          BRANCH="release/${{ steps.version.outputs.version }}"
-          BASE_SHA=$(git rev-parse HEAD)
-
-          # Branch the release off the current main commit. Creating a ref to an existing (already
-          # verified) commit is not itself a new commit, so the ruleset does not apply to this step.
-          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
-            -f ref="refs/heads/$BRANCH" \
-            -f sha="$BASE_SHA"
-
-          # Commit the bumped package.json onto the branch as a web-flow-signed (Verified) commit.
-          jq -n \
-            --arg b64 "$(base64 -w0 package.json)" \
-            --arg oid "$BASE_SHA" \
-            --arg branch "$BRANCH" \
-            --arg repo "$GITHUB_REPOSITORY" \
-            --arg msg "chore(release): bump version to ${{ steps.version.outputs.version }}" \
-            '{
-              query: "mutation($input: CreateCommitOnBranchInput!){createCommitOnBranch(input:$input){commit{oid}}}",
-              variables: { input: {
-                branch: { repositoryNameWithOwner: $repo, branchName: $branch },
-                message: { headline: $msg },
-                expectedHeadOid: $oid,
-                fileChanges: { additions: [ { path: "package.json", contents: $b64 } ] }
-              } }
-            }' | gh api graphql --input -
-
       # ------------------------------------------------------------------
-      # 4. Open & merge PR (only for latest channel)
+      # 4. Tag the release (tags are not covered by the branch protections)
       # ------------------------------------------------------------------
-      - name: Create PR
-        if: ${{ github.event.inputs.dist_tag == 'latest' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh pr create \
-            --title "Release ${{ steps.version.outputs.version }}" \
-            --body "Automated release PR for ${{ steps.version.outputs.version }}." \
-            --base main \
-            --head "release/${{ steps.version.outputs.version }}"
-
-      - name: Merge PR
-        if: ${{ github.event.inputs.dist_tag == 'latest' }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          PR_NUMBER=$(gh pr list --head "release/${{ steps.version.outputs.version }}" --json number --jq '.[0].number')
-          gh pr merge "$PR_NUMBER" --merge --delete-branch
-
-      # ------------------------------------------------------------------
-      # 5. Sync with main and create git tag
-      # ------------------------------------------------------------------
-      - name: Sync local checkout to released main
-        if: ${{ github.event.inputs.dist_tag == 'latest' }}
-        run: |
-          # package.json was bumped locally (pnpm version) but never committed here; the verified
-          # bump now lives on main via the merged PR. Reset to it so the tag and publish use the
-          # released version. dist/ is gitignored, so the build from the earlier step survives.
-          git fetch origin main
-          git reset --hard origin/main
-
       - name: Create and push git tag
         run: |
           git tag ${{ steps.version.outputs.version }}
           git push origin ${{ steps.version.outputs.version }}
 
       # ------------------------------------------------------------------
-      # 6. Publish to NPM with rollback on failure
+      # 5. Publish to NPM with rollback on failure
       # ------------------------------------------------------------------
       - name: Publish to NPM
         run: |
@@ -198,7 +130,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
 
       # ------------------------------------------------------------------
-      # 7. Create GitHub release
+      # 6. Create GitHub release
       # ------------------------------------------------------------------
       - name: Create GitHub Release
         if: ${{ github.event.inputs.dist_tag == 'latest' }}

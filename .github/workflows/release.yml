@@ -101,22 +101,46 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Create release branch
-        if: ${{ github.event.inputs.dist_tag == 'latest' }}
-        run: |
-          BRANCH="release/${{ steps.version.outputs.version }}"
-          git checkout -b "$BRANCH"
-
       - name: Bump package.json version
         run: |
           pnpm version "$(echo ${{ steps.version.outputs.version }} | sed 's/^v//')" --no-git-tag-version
 
-      - name: Commit package.json version
+      # The "Require verified commits" ruleset (targets ~ALL branches, no bypass) rejects the
+      # runner's unsigned commits, so for the latest channel we create the version-bump commit
+      # through the GraphQL createCommitOnBranch mutation. Commits made that way are signed with
+      # GitHub's web-flow key (Verified), satisfying the ruleset with no signing-key secret. NOTE:
+      # the REST Contents API does NOT sign commits, so it cannot be used here. A bump touches only
+      # package.json, so a single-file addition suffices.
+      - name: Commit version bump via API (verified)
         if: ${{ github.event.inputs.dist_tag == 'latest' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git add package.json pnpm-lock.yaml || true
-          git commit -m "chore(release): bump version to ${{ steps.version.outputs.version }}"
-          git push -u origin HEAD
+          BRANCH="release/${{ steps.version.outputs.version }}"
+          BASE_SHA=$(git rev-parse HEAD)
+
+          # Branch the release off the current main commit. Creating a ref to an existing (already
+          # verified) commit is not itself a new commit, so the ruleset does not apply to this step.
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/heads/$BRANCH" \
+            -f sha="$BASE_SHA"
+
+          # Commit the bumped package.json onto the branch as a web-flow-signed (Verified) commit.
+          jq -n \
+            --arg b64 "$(base64 -w0 package.json)" \
+            --arg oid "$BASE_SHA" \
+            --arg branch "$BRANCH" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg msg "chore(release): bump version to ${{ steps.version.outputs.version }}" \
+            '{
+              query: "mutation($input: CreateCommitOnBranchInput!){createCommitOnBranch(input:$input){commit{oid}}}",
+              variables: { input: {
+                branch: { repositoryNameWithOwner: $repo, branchName: $branch },
+                message: { headline: $msg },
+                expectedHeadOid: $oid,
+                fileChanges: { additions: [ { path: "package.json", contents: $b64 } ] }
+              } }
+            }' | gh api graphql --input -
 
       # ------------------------------------------------------------------
       # 4. Open & merge PR (only for latest channel)
@@ -130,24 +154,27 @@ jobs:
             --title "Release ${{ steps.version.outputs.version }}" \
             --body "Automated release PR for ${{ steps.version.outputs.version }}." \
             --base main \
-            --head "$(git symbolic-ref --short HEAD)"
+            --head "release/${{ steps.version.outputs.version }}"
 
       - name: Merge PR
         if: ${{ github.event.inputs.dist_tag == 'latest' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          PR_NUMBER=$(gh pr list --head "$(git symbolic-ref --short HEAD)" --json number --jq '.[0].number')
+          PR_NUMBER=$(gh pr list --head "release/${{ steps.version.outputs.version }}" --json number --jq '.[0].number')
           gh pr merge "$PR_NUMBER" --merge --delete-branch
 
       # ------------------------------------------------------------------
       # 5. Sync with main and create git tag
       # ------------------------------------------------------------------
-      - name: Fast-forward sync with main
+      - name: Sync local checkout to released main
         if: ${{ github.event.inputs.dist_tag == 'latest' }}
         run: |
+          # package.json was bumped locally (pnpm version) but never committed here; the verified
+          # bump now lives on main via the merged PR. Reset to it so the tag and publish use the
+          # released version. dist/ is gitignored, so the build from the earlier step survives.
           git fetch origin main
-          git merge --ff-only origin/main
+          git reset --hard origin/main
 
       - name: Create and push git tag
         run: |

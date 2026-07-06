@@ -44,6 +44,12 @@ import { EthSigner as _EthSigner } from './core/signature';
 import { Kwil as _Kwil } from './client/kwil';
 import { formatEncodedValue as _formatEncodedValue } from './utils/parameterEncoding';
 import { encodeEncodedValue as _encodeEncodedValue, encodeMAAExec as _encodeMAAExec } from './utils/kwilEncoding';
+import {
+  decodeActionExecution as _decodeActionExecution,
+  decodeEncodedValue as _decodeEncodedValue,
+  decodeDataType as _decodeDataType,
+  decodeValue as _decodeValue,
+} from './utils/kwilDecoding';
 import { EncodedValue as _EncodedValue } from './core/payload';
 
 namespace Types {
@@ -126,6 +132,30 @@ namespace Utils {
    * use; most callers should use `kwil.maaExec()`.
    */
   export const encodeMAAExec = _encodeMAAExec;
+
+  /**
+   * Decodes an `execute` transaction payload (e.g. `txInfo(hash).tx.body.payload`) into its action
+   * name and batched arguments. The inverse of `encodeActionExecution`; accepts the base64 string or
+   * raw bytes. Pair with `decodeValue` to read each argument as a native value.
+   */
+  export const decodeActionExecution = _decodeActionExecution;
+
+  /**
+   * Decodes a serialized `EncodedValue` back into its `{ type, data }` structure. The inverse of
+   * `encodeEncodedValue`.
+   */
+  export const decodeEncodedValue = _decodeEncodedValue;
+
+  /**
+   * Decodes a serialized `DataType` back into a `DataInfo` (`{ name, is_array, metadata }`).
+   */
+  export const decodeDataType = _decodeDataType;
+
+  /**
+   * Turns an `EncodedValue` into a native JavaScript value, mirroring kwil-db's `EncodedValue.Decode`.
+   * Integers are returned as `bigint` (kwil-db stores int64); numeric/decimal values as strings.
+   */
+  export const decodeValue = _decodeValue;
 }
 
 export { NodeKwil, WebKwil, KwilSigner, Types, Utils, Client, AdminClient, EnvironmentType };

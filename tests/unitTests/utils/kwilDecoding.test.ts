@@ -152,6 +152,14 @@ describe('decodeValue — kwil-db EncodedValue.Decode parity', () => {
     expect(decodeValue(formatEncodedValue(false))).toBe(false);
   });
 
+  test('rejects a bool with the wrong payload size', () => {
+    const ev: EncodedValue = {
+      type: { name: VarType.BOOL, is_array: false, metadata: [0, 0] },
+      data: [new Uint8Array([1, 0, 1])], // null-flag + 2 value bytes = malformed
+    };
+    expect(() => decodeValue(ev)).toThrow(/bool must be 1 byte/);
+  });
+
   test('decodes bytea', () => {
     const bytes = new Uint8Array([1, 2, 3, 255]);
     expect(decodeValue(formatEncodedValue(bytes))).toEqual(bytes);
@@ -184,15 +192,23 @@ describe('decodeValue — kwil-db EncodedValue.Decode parity', () => {
     //   namespace "main", action "insert_records",
     //   [["stream_a", int64(100), true], ["stream_b", int64(-5), false]]
     // Pins cross-implementation parity with the Go encoder, including a negative int64.
+    // Split at the ActionExecution field boundaries so each encoded field is auditable; the bytes
+    // are unchanged (this concatenation is byte-for-byte the Go MarshalBinary output).
     const goHex =
-      '0000040000006d61696e0e000000696e736572745f7265636f726473020003002400' +
-      '000000000f0000000000000000047465787400000000000100090000000173747265' +
-      '616d5f612400000000000f000000000000000004696e74380000000000010009000000' +
-      '0100000000000000641d00000000000f000000000000000004626f6f6c00000000000100' +
-      '02000000010103002400000000000f0000000000000000047465787400000000000100090000' +
-      '000173747265616d5f622400000000000f000000000000000004696e7438000000000001000900' +
-      '000001fffffffffffffffb1d00000000000f000000000000000004626f6f6c0000000000010002' +
-      '0000000100';
+      '0000' + // uint16-LE version = 0
+      '040000006d61696e' + // WriteString(namespace): len=4, "main"
+      '0e000000696e736572745f7265636f726473' + // WriteString(action): len=14, "insert_records"
+      '0200' + // uint16-LE numCalls = 2
+      // --- call 0: ["stream_a", int64(100), true] ---
+      '0300' + // uint16-LE numArgs = 3
+      '2400000000000f0000000000000000047465787400000000000100090000000173747265616d5f61' + // arg0 EncodedValue (len=36): text "stream_a"
+      '2400000000000f000000000000000004696e74380000000000010009000000010000000000000064' + // arg1 EncodedValue (len=36): int8 100
+      '1d00000000000f000000000000000004626f6f6c00000000000100020000000101' + // arg2 EncodedValue (len=29): bool true
+      // --- call 1: ["stream_b", int64(-5), false] ---
+      '0300' + // uint16-LE numArgs = 3
+      '2400000000000f0000000000000000047465787400000000000100090000000173747265616d5f62' + // arg0 EncodedValue (len=36): text "stream_b"
+      '2400000000000f000000000000000004696e7438000000000001000900000001fffffffffffffffb' + // arg1 EncodedValue (len=36): int8 -5 (big-endian two's complement)
+      '1d00000000000f000000000000000004626f6f6c00000000000100020000000100'; // arg2 EncodedValue (len=29): bool false
     const decoded = decodeActionExecution(hexToBytes(goHex));
 
     expect(decoded.dbid).toBe('main');

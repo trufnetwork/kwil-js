@@ -86,9 +86,12 @@ class ByteReader {
 
   readRaw(n: number): Uint8Array {
     this.ensure(n);
-    const slice = this.bytes.subarray(this.offset, this.offset + n);
+    // Copy rather than subarray so returned bytes never alias the caller's input buffer. This is the
+    // single copy point for all bytes that flow out of the reader (EncodedValue.data, and onward into
+    // decoded action arguments).
+    const copy = this.bytes.slice(this.offset, this.offset + n);
     this.offset += n;
-    return slice;
+    return copy;
   }
 
   /**
@@ -258,9 +261,11 @@ function decodeScalar(element: Uint8Array, type: DataInfo): DecodedValue {
       return new DataView(data.buffer, data.byteOffset, data.byteLength).getBigInt64(0, false);
     }
     case VarType.BOOL:
-      return data.length > 0 && data[0] === 1;
+      if (data.length !== 1) {
+        throw new Error(`bool must be 1 byte, got ${data.length}`);
+      }
+      return data[0] === 1;
     case VarType.BYTEA:
-      // Copy so the result does not alias the caller's buffer.
       return data.slice();
     case VarType.UUID:
       if (data.length !== 16) {

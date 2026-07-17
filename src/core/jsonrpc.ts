@@ -19,6 +19,7 @@ export enum JSONRPCMethod {
   METHOD_HEALTH = 'user.health',
   METHOD_PING = 'user.ping',
   METHOD_CHAIN_INFO = 'user.chain_info',
+  METHOD_BLOCK_HEADER = 'chain.block_header',
   METHOD_ACCOUNT = 'user.account',
   METHOD_BROADCAST = 'user.broadcast',
   METHOD_CALL = 'user.call',
@@ -50,6 +51,10 @@ export interface BroadcastRequest {
 export type CallRequest = MsgData<BytesEncodingStatus.BASE64_ENCODED>;
 
 export type ChainInfoRequest = EmptyRequest;
+
+export interface BlockHeaderRequest {
+  height: number;
+}
 
 export type ChallengeRequest = EmptyRequest;
 
@@ -127,6 +132,39 @@ export interface ChainInfoResponse {
   chain_id: string;
   block_height: number;
   block_hash: string;
+}
+
+/**
+ * Raw `chain.block_header` result. The node's serialization of the header
+ * differs by kwil-db version: newer nodes emit snake_case fields with the
+ * block time as `stamp_ms` (unix milliseconds, integer); older TN nodes emit
+ * Go-default capitalized fields with the block time as `Timestamp` (an RFC3339
+ * string). Both spellings are modeled as optional and reconciled by
+ * `mapBlockHeader` (src/utils/blockHeader.ts).
+ */
+export interface BlockHeaderResponse {
+  // snake_case (newer kwil-db)
+  version?: number;
+  height?: number;
+  num_txns?: number;
+  prev_hash?: string;
+  prev_app_hash?: string;
+  stamp_ms?: number;
+  merkle_root?: string;
+  vals_hash?: string;
+  params_hash?: string;
+  new_leader?: string | null;
+  // Go-default capitalized (older TN mainnet)
+  Version?: number;
+  Height?: number;
+  NumTxns?: number;
+  PrevHash?: string;
+  PrevAppHash?: string;
+  Timestamp?: string;
+  MerkleRoot?: string;
+  ValidatorSetHash?: string;
+  NetworkParamsHash?: string;
+  NewLeader?: string | null;
 }
 
 export interface ChallengeResponse {

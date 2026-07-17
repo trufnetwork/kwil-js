@@ -25,6 +25,20 @@ export interface ChainInfoOpts {
   disableWarning?: boolean;
 }
 
+export interface BlockHeader {
+  version: number;
+  height: number;
+  numTxns: number;
+  prevHash: string;
+  prevAppHash: string;
+  /** Block time as unix epoch milliseconds, read from the block header. */
+  stampMs: number;
+  merkleRoot: string;
+  validatorSetHash: string;
+  networkParamsHash: string;
+  newLeader: string | null;
+}
+
 export type DatasetInfo = DatasetInfoBase<BytesEncodingStatus.UINT8_ENCODED>;
 
 export type DatasetInfoServer = DatasetInfoBase<BytesEncodingStatus.HEX_ENCODED>;

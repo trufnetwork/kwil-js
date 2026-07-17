@@ -28,7 +28,7 @@ import {
 } from './core/database';
 import { GenericResponse as _GenericResponse } from './core/resreq';
 import { TxResult as _TxResult, TxInfoReceipt as _TxInfoReceipt } from './core/txQuery';
-import { Account as _Account, DatasetInfo as _DatasetInfo, ChainInfo as _ChainInfo, ChainInfoOpts as _ChainInfoOpts } from './core/network';
+import { Account as _Account, DatasetInfo as _DatasetInfo, ChainInfo as _ChainInfo, ChainInfoOpts as _ChainInfoOpts, BlockHeader as _BlockHeader } from './core/network';
 import { MsgReceipt as _MsgReceipt, Message as _Message } from './core/message';
 import { KwilSigner } from './core/kwilSigner';
 import { EnvironmentType } from './core/enums';
@@ -67,6 +67,7 @@ namespace Types {
   export type QueryParams = _QueryParams;
   export type ChainInfo = _ChainInfo;
   export type ChainInfoOpts = _ChainInfoOpts
+  export type BlockHeader = _BlockHeader;
   export type AuthSuccess<T extends EnvironmentType> = _AuthSuccess<T>;
   export type AuthBody = _AuthBody;
   export type LogoutResponse<T extends EnvironmentType> = _LogoutResponse<T>;

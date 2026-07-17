@@ -3,7 +3,7 @@ import { KwilConfig } from '../api_client/config';
 import { GenericResponse } from '../core/resreq';
 import { Database, DeployBody, DropBody } from '../core/database';
 import { TxReceipt } from '../core/tx';
-import { Account, ChainInfo, ChainInfoOpts, DatasetInfo } from '../core/network';
+import { Account, BlockHeader, ChainInfo, ChainInfoOpts, DatasetInfo } from '../core/network';
 import { TxInfoReceipt } from '../core/txQuery';
 import {
   AuthenticationMode,
@@ -404,6 +404,23 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
     }
 
     return info;
+  }
+
+  /**
+   * Retrieves the header of the block at the given height, including its
+   * timestamp as `stampMs` (unix epoch milliseconds).
+   *
+   * The time is read directly from the node's block header, so it is available
+   * for any block the node still retains — including the newest tip block —
+   * without depending on the indexer. Rejects if the node no longer retains the
+   * block (e.g. pruned below its state-sync cutoff) or has the chain RPC service
+   * disabled.
+   *
+   * @param height - The block height to retrieve the header for.
+   * @returns {BlockHeader} - A promise that resolves to the block header.
+   */
+  public async blockHeader(height: number): Promise<GenericResponse<BlockHeader>> {
+    return await this.blockHeaderClient(height);
   }
 
   /**

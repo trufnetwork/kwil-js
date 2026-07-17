@@ -1,5 +1,6 @@
 import { base64ToBytes } from '../utils/base64';
-import { Account, AccountId, ChainInfo, DatasetInfo } from '../core/network';
+import { Account, AccountId, BlockHeader, ChainInfo, DatasetInfo } from '../core/network';
+import { mapBlockHeader } from '../utils/blockHeader';
 import { Transaction, TxReceipt } from '../core/tx';
 import { Api } from './api';
 import { ClientConfig } from './config';
@@ -24,6 +25,8 @@ import {
   AuthnLogoutRequest,
   AuthnRequest,
   AuthnResponse,
+  BlockHeaderRequest,
+  BlockHeaderResponse,
   BroadcastRequest,
   BroadcastResponse,
   CallRequest,
@@ -238,6 +241,16 @@ export default class Client extends Api {
         hash: r.result.block_hash,
       };
     });
+  }
+
+  protected async blockHeaderClient(height: number): Promise<GenericResponse<BlockHeader>> {
+    const body = this.buildJsonRpcRequest<BlockHeaderRequest>(JSONRPCMethod.METHOD_BLOCK_HEADER, {
+      height,
+    });
+
+    const res = await super.post<JsonRPCResponse<BlockHeaderResponse>>(`/rpc/v1`, body);
+
+    return checkRes(res, (r) => mapBlockHeader(r.result));
   }
 
   protected async healthModeCheckClient(): Promise<GenericResponse<HealthResponse>> {

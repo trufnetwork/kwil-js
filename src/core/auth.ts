@@ -1,4 +1,5 @@
 import { HexString } from '../utils/types';
+import { bytesToHex } from '../utils/serial';
 import { BytesEncodingStatus, EnvironmentType } from './enums';
 import { Signature } from './signature';
 
@@ -31,11 +32,13 @@ export type AuthSuccess<T extends EnvironmentType> = T extends EnvironmentType.B
 
 export interface BrowserAuthSuccess {
   result: string;
+  token?: string;
 }
 
 export interface NodeAuthSuccess {
   result: string;
   cookie?: string;
+  token?: string;
 }
 
 export type LogoutResponse<T extends EnvironmentType> = T extends EnvironmentType.BROWSER
@@ -111,4 +114,19 @@ export function verifyAuthProperties(
   if (authParm.chain_id && authParm.chain_id !== chainId) {
     throw new Error(`Chain ID mismatch: ${authParm.chain_id} !== ${chainId}`);
   }
+}
+
+/**
+ * The key under which the client keeps a signer's gateway session token: the
+ * signer's identifier as lowercase hex without a 0x prefix. The gateway names
+ * the session's account the same way.
+ *
+ * @param {HexString | Uint8Array} identifier - The signer's identifier.
+ * @returns The key.
+ */
+export function sessionTokenKey(identifier: HexString | Uint8Array): string {
+  if (typeof identifier !== 'string') {
+    return bytesToHex(identifier);
+  }
+  return identifier.replace(/^0x/i, '').toLowerCase();
 }

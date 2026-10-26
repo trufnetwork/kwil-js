@@ -15,7 +15,13 @@ import {
   BytesEncodingStatus,
   EnvironmentType,
 } from '../core/enums';
-import { KGWAuthInfo, AuthSuccess, AuthenticatedBody, LogoutResponse } from '../core/auth';
+import {
+  KGWAuthInfo,
+  AuthSuccess,
+  AuthenticatedBody,
+  LogoutResponse,
+  sessionTokenKey,
+} from '../core/auth';
 import { AxiosResponse } from 'axios';
 import {
   AccountRequest,
@@ -86,6 +92,11 @@ export default class Client extends Api {
 
     const res = await super.post<JsonRPCResponse<AuthnResponse>>(`/rpc/v1`, body);
 
+    // a gateway that can carry the session in a header returns it as a token
+    if (res.status === 200 && res.data?.result?.token) {
+      this.updateSessionToken(authBody.sender, res.data.result.token);
+    }
+
     if (typeof window === 'undefined') {
       return checkRes(res, (r) => {
         const cookie = res.headers['set-cookie'];
@@ -110,6 +121,33 @@ export default class Client extends Api {
   protected async logoutClient<T extends EnvironmentType>(
     identifier?: Uint8Array
   ): Promise<GenericResponse<LogoutResponse<T>>> {
+    // A token's session ends only through a logout sent with that token. The
+    // gateway then leaves the cookie alone, so the cookie logout below still runs.
+    const keys = identifier
+      ? [sessionTokenKey(identifier)]
+      : Array.from(this.sessionTokens.keys());
+    for (const key of keys) {
+      const token = this.sessionTokenFor(key);
+      if (token) {
+        const tokenBody = this.buildJsonRpcRequest<AuthnLogoutRequest>(
+          JSONRPCMethod.METHOD_KGW_LOGOUT,
+          { account: key }
+        );
+        try {
+          const tokenRes = await super.post<JsonRPCResponse<AuthnResponse>>(
+            `/rpc/v1`,
+            tokenBody,
+            this.sessionTokenConfig(token)
+          );
+          if (tokenRes.status === 200 && !tokenRes.data?.error) {
+            this.updateSessionToken(key, undefined);
+          }
+        } catch {
+          // no answer: keep the token, and still log out the cookie below
+        }
+      }
+    }
+
     const body = this.buildJsonRpcRequest<AuthnLogoutRequest>(JSONRPCMethod.METHOD_KGW_LOGOUT, {
       account: identifier ? bytesToHex(identifier) : '',
     });
@@ -308,7 +346,8 @@ export default class Client extends Api {
     });
   }
 
-  protected async callClient(msg: Message): Promise<CallClientResponse<any>> {
+  // callClient sends the call with its sender's session token, unless withToken is false
+  protected async callClient(msg: Message, withToken = true): Promise<CallClientResponse<any>> {
     const body = this.buildJsonRpcRequest<CallRequest>(JSONRPCMethod.METHOD_CALL, {
       body: msg.body,
       auth_type: msg.auth_type,
@@ -316,7 +355,12 @@ export default class Client extends Api {
       signature: msg.signature || '',
     });
 
-    const res = await super.post<JsonRPCResponse<CallResponse>>(`/rpc/v1`, body);
+    const token = withToken && msg.sender ? this.sessionTokenFor(sessionTokenKey(msg.sender)) : undefined;
+    const res = await super.post<JsonRPCResponse<CallResponse>>(
+      `/rpc/v1`,
+      body,
+      this.sessionTokenConfig(token)
+    );
 
     const errorResponse = this.checkAuthError(res);
     if (errorResponse) {

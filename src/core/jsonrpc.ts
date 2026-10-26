@@ -231,4 +231,6 @@ export type AuthParamResponse = KGWAuthInfo;
 
 export interface AuthnResponse {
   result: string;
+  // the session as a token, from a gateway that can carry it in a header
+  token?: string;
 }

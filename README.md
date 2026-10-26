@@ -334,9 +334,36 @@ const res = await kwil.call(body, kwilSigner);
 */
 ```
 
+#### Session tokens (no cookie needed)
+
+A gateway that supports it returns the session as a token at sign-in, and the client sends that signer's calls with it as `Authorization: Bearer <token>`. This keeps the session where the gateway's cookie is dropped, such as in a wallet's in-app browser (Android WebView, iOS WKWebView), where the cookie is a third-party cookie.
+
+The client keeps one token per signer, in memory. To keep them across page loads, save them as they change and pass them back next time:
+
+```javascript
+const saved = JSON.parse(sessionStorage.getItem('kgw-tokens') || '{}');
+const kwil = new WebKwil({
+  kwilProvider: 'https://gateway.example',
+  chainId: 'my-chain',
+  sessionTokens: saved,
+  onSessionToken: (identifier, token) => {
+    if (token) saved[identifier] = token;
+    else delete saved[identifier];
+    sessionStorage.setItem('kgw-tokens', JSON.stringify(saved));
+  },
+});
+```
+
+- `kwil.getSessionToken(identifier)` and `kwil.setSessionToken(identifier, token)` read and set one signer's token; the identifier can be a wallet address. `setSessionToken` does not call `onSessionToken`.
+- Only `call` and the gateway logout carry a token, and only the token of the call's signer.
+- When the gateway refuses a token, for example because it expired, the client forgets it. With `autoAuthenticate` on (the default) and a signer passed to `call`, it then signs in again and retries the call once.
+- Calls for the same signer that fail together share one sign-in, so the wallet is asked to sign once.
+- If the browser stops a call carrying a token before any answer, as it does when the gateway's CORS list lacks `Authorization`, the client sends the call once more with the token and then once without it. If only the call without the token gets an answer, this client stops sending tokens. Timeouts and errors the gateway answers never do this.
+- Page scripts can read the tokens, unlike the gateway's cookie. Keep them in `sessionStorage` rather than `localStorage` if you want them to end with the tab.
+
 ### Gateway logout
 
-To log out of the Kwil Gateway, you can call the `kwil.auth.logoutKGW()` method. This is useful if you want to switch accounts or remove the authentication cookie.
+To log out of the Kwil Gateway, you can call the `kwil.auth.logoutKGW()` method. This is useful if you want to switch accounts or remove the authentication cookie. When the client holds session tokens, the logout also ends the session of each token it covers (the given signer's, or all of them) and the client forgets those tokens.
 
 ```javascript
 await kwil.auth.logoutKGW();

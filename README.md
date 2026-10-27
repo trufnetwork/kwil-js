@@ -334,10 +334,57 @@ const res = await kwil.call(body, kwilSigner);
 */
 ```
 
-### Gateway logout
+#### Session tokens (no cookie needed)
 
-To log out of the Kwil Gateway, you can call the `kwil.auth.logoutKGW()` method. This is useful if you want to switch accounts or remove the authentication cookie.
+A gateway that supports it returns the session as a token at sign-in, and the client sends that signer's calls with it as `Authorization: Bearer <token>`. This keeps the session where the gateway's cookie is dropped, such as in a wallet's in-app browser (Android WebView, iOS WKWebView), where the cookie is a third-party cookie.
+
+The client keeps one token per signer, in memory. To keep them across page loads, save them as they change and pass them back next time. A token belongs to the gateway that issued it, so keep each gateway's tokens apart:
 
 ```javascript
-await kwil.auth.logoutKGW();
+const gateway = 'https://gateway.example';
+const storageKey = `kgw-tokens:${gateway}`;
+let saved = {};
+try {
+  saved = JSON.parse(sessionStorage.getItem(storageKey) || '{}');
+} catch {
+  // storage blocked or the saved value unreadable: start without saved tokens
+}
+const kwil = new WebKwil({
+  kwilProvider: gateway,
+  chainId: 'my-chain',
+  sessionTokens: saved,
+  onSessionToken: (identifier, token) => {
+    if (token) saved[identifier] = token;
+    else delete saved[identifier];
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify(saved));
+    } catch {
+      // storage blocked or full: the client keeps its tokens in memory
+    }
+  },
+});
+```
+
+- `kwil.getSessionToken(identifier)` and `kwil.setSessionToken(identifier, token)` read and set one signer's token; the identifier can be a wallet address. `setSessionToken` does not call `onSessionToken`.
+- Only `call` and the gateway logout carry a token, and only the token of the call's signer.
+- When the gateway refuses a token, for example because it expired, the client forgets it. With `autoAuthenticate` on (the default) and a signer passed to `call`, it then signs in again and retries the call once.
+- Calls for the same signer that fail together share one sign-in, so the wallet is asked to sign once.
+- If the browser stops a call carrying a token before any answer, as it does when the gateway's CORS list lacks `Authorization`, the client sends the call once more with the token and then once without it. If the call without the token gets an answer, the client tries the token once more; only if that try is stopped too does this client stop sending tokens with calls. It keeps them: logout still sends them, a call the gateway then refuses tries its signer's token once more before signing in, and a sign-in that returns a token turns them back on. Timeouts and errors the gateway answers never do this.
+- Page scripts can read the tokens, unlike the gateway's cookie. Keep them in `sessionStorage` rather than `localStorage` if you want them to end with the tab.
+
+### Gateway logout
+
+To log out of the Kwil Gateway, you can call the `kwil.auth.logoutKGW()` method. This is useful if you want to switch accounts or remove the authentication cookie. When the client holds session tokens, the logout also ends the session of each token it covers (the given signer's, or all of them) and the client forgets those tokens. If the gateway does not confirm a token's logout, the client keeps that token and `logoutKGW` throws a `SessionLogoutError` after the cookie logout; if the cookie logout failed as well, the error's `cause` holds that error. Its `identifiers` lists the signers as lowercase hex without `0x`, so the app can call `logoutKGW` again, or drop a token without ending its session with `setSessionToken(identifier, undefined)`. That does not call `onSessionToken`, so also remove the token from the tokens you saved (`delete saved[identifier]` in the example above, then save), or the next page load brings it back.
+
+```javascript
+import { SessionLogoutError } from '@trufnetwork/kwil-js';
+
+try {
+  await kwil.auth.logoutKGW();
+} catch (error) {
+  // other errors, and a cookie logout that failed too (`cause`), mean the logout failed
+  if (!(error instanceof SessionLogoutError) || error.cause !== undefined) throw error;
+  // the cookie logout went through; these signers' token sessions may still be live
+  console.warn('token logout not confirmed for', error.identifiers);
+}
 ```

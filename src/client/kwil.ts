@@ -20,10 +20,13 @@ import { Auth } from '../auth/auth';
 import { Action } from '../transaction/action';
 import { Message, MsgReceipt } from '../core/message';
 import { AuthBody } from '../core/signature';
+import { AuthSuccess, sessionTokenKey } from '../core/auth';
+import { CallClientResponse } from '../core/message';
+import { isNetworkError, isUnanswered } from '../api_client/api';
 import { SelectQueryRequest } from '../core/jsonrpc';
 import { encodeParameters, encodeRawStatementParameters, formatEncodedValue } from '../utils/parameterEncoding';
 import { generateDBID } from '../utils/dbid';
-import { Base64String, QueryParams } from '../utils/types';
+import { Base64String, HexString, QueryParams } from '../utils/types';
 import { PayloadTx } from '../transaction/payloadTx';
 import { MAAExecPayload, RawStatementPayload } from '../core/payload';
 import { resolveNamespace, validateNamespace } from '../utils/namespace';
@@ -43,6 +46,9 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
   public auth: Auth<T>;
 
   private authMode?: string; // To store the mode on the class for subsequent requests
+
+  // gateway sign-ins in progress, one per signer, shared by calls that need one at the same time
+  private readonly pendingKGWAuth = new Map<string, Promise<GenericResponse<AuthSuccess<T>>>>();
 
   private actionsCache: LRUCache<string, Object[]>;
 
@@ -548,25 +554,52 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
         cookieHandlerCallback.setCookie();
       }
       const message = await this.buildMessage(callBody, kwilSigner);
-      const response = await this.callClient(message);
+      const senderKey = message.sender ? sessionTokenKey(message.sender) : undefined;
+      let tokenSent = senderKey ? this.sessionTokenFor(senderKey) : undefined;
+
+      let response = await this.callWithFallback(message);
 
       // if nodeJS user passes a cookie, reset it after the call
       if (cookieHandlerCallback) {
         cookieHandlerCallback.resetCookie();
       }
 
-      // if the user is not authenticated, prompt the user to authenticate
-      if (response.authCode === AuthErrorCodes.KGW_MODE && this.autoAuthenticate) {
-        if (!kwilSigner) {
-          throw new Error('KGW authentication requires a KwilSigner');
+      // Tokens are off for calls, so the gateway has not refused this signer's
+      // held token: try it once before a sign-in replaces it.
+      const held =
+        senderKey && !this.sendSessionTokens ? this.sessionTokens.get(senderKey) : undefined;
+      if (response.authCode === AuthErrorCodes.KGW_MODE && held) {
+        this.sendSessionTokens = true;
+        tokenSent = held;
+        response = await this.callWithFallback(message);
+      }
+
+      if (response.authCode === AuthErrorCodes.KGW_MODE) {
+        const current = senderKey ? this.sessionTokenFor(senderKey) : undefined;
+        // the gateway refused the token: it expired, or the gateway restarted
+        if (senderKey && tokenSent && current === tokenSent) {
+          this.updateSessionToken(senderKey, undefined);
         }
-        const res = await this.auth.authenticateKGW(kwilSigner);
-        
-        // if cookie was returned with res.data, we are in nodejs and need to set the cookie
-        if (res.data && 'cookie' in res.data) {
-          this.cookie = res.data.cookie;
+
+        // if the user is not authenticated, prompt the user to authenticate
+        if (this.autoAuthenticate) {
+          if (!kwilSigner) {
+            throw new Error('KGW authentication requires a KwilSigner');
+          }
+
+          // If a newer token arrived while this call was in flight, another call
+          // has signed in already, so the retry uses that token.
+          if (!current || current === tokenSent) {
+            const res = await this.authenticateKGWOnce(kwilSigner);
+
+            // if cookie was returned with res.data, we are in nodejs and need to set the cookie
+            if (res.data && 'cookie' in res.data) {
+              this.cookie = res.data.cookie;
+            }
+          }
+          // the retry has the same fallback as the call
+          return await this.callWithFallback(message);
         }
-        return await this.callClient(message);
       }
       return response
     }
@@ -578,12 +611,132 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
         authBody.challenge,
         authBody.signature
       );
-      return await this.callClient(message);
+      // a private node is not a gateway, so its calls carry no gateway token
+      return await this.callClient(message, false);
     }
 
     throw new Error(
       'Unexpected authentication mode. If you hit this error, please report it to the Kwil team.'
     );
+  }
+
+  /**
+   * Sends a call with its signer's token, if the client holds one and tokens are
+   * on for calls. Only a call the browser stopped before any answer may be a
+   * gateway that refuses the header; errors the gateway answered and timeouts
+   * are thrown as they are, and the token is kept.
+   */
+  private async callWithFallback(message: Message): Promise<CallClientResponse<any>> {
+    const senderKey = message.sender ? sessionTokenKey(message.sender) : undefined;
+    const token = senderKey ? this.sessionTokenFor(senderKey) : undefined;
+    try {
+      return await this.callClient(message);
+    } catch (error) {
+      if (!token || !isNetworkError(error)) {
+        throw error;
+      }
+      return await this.callPastRefusedToken(message, error);
+    }
+  }
+
+  /**
+   * A call that carried a token was stopped before any answer, as a refused CORS
+   * preflight is when the gateway's list lacks Authorization. It is sent once
+   * more with the token, in case the network blinked, and then without it. If the
+   * call without the token gets an answer, even an error, the token is tried once
+   * more, so a gateway that was down for a moment is not taken for one that
+   * refuses the header. Only when that try is stopped too does the client stop
+   * sending tokens with calls, and the caller gets the answer to the call without
+   * the token. The client keeps the tokens: logout still sends them, a call the
+   * gateway then refuses tries its signer's held token again, and a sign-in that
+   * returns a token turns them back on. If the call without the token gets no
+   * answer, the first error is thrown.
+   */
+  private async callPastRefusedToken(
+    message: Message,
+    firstError: unknown
+  ): Promise<CallClientResponse<any>> {
+    try {
+      return await this.callClient(message);
+    } catch (error) {
+      if (!isNetworkError(error)) {
+        throw error;
+      }
+    }
+
+    let response: CallClientResponse<any> | undefined;
+    let answeredError: unknown;
+    try {
+      response = await this.callClient(message, false);
+    } catch (error) {
+      if (isUnanswered(error)) {
+        throw firstError;
+      }
+      answeredError = error;
+    }
+
+    try {
+      return await this.callClient(message);
+    } catch (error) {
+      if (!isNetworkError(error)) {
+        throw error;
+      }
+    }
+    this.sendSessionTokens = false;
+    if (response === undefined) {
+      throw answeredError;
+    }
+    return response;
+  }
+
+  /**
+   * Signs in to the gateway. Calls that need a sign-in at the same time share
+   * one, so the wallet is asked to sign once rather than once per call.
+   */
+  private authenticateKGWOnce(signer: KwilSigner): Promise<GenericResponse<AuthSuccess<T>>> {
+    const key = sessionTokenKey(signer.identifier);
+    const pending = this.pendingKGWAuth.get(key);
+    if (pending) {
+      return pending;
+    }
+
+    const promise = this.auth.authenticateKGW(signer).finally(() => {
+      if (this.pendingKGWAuth.get(key) === promise) {
+        this.pendingKGWAuth.delete(key);
+      }
+    });
+    this.pendingKGWAuth.set(key, promise);
+    return promise;
+  }
+
+  /**
+   * Returns the gateway session token the client holds for a signer, if any. A
+   * gateway that can carry the session in a header returns one at sign-in; the
+   * client then sends it with that signer's calls as "Authorization: Bearer
+   * <token>". To keep it across page loads, save it from onSessionToken and pass
+   * it back in `sessionTokens`, or with setSessionToken.
+   *
+   * @param {HexString | Uint8Array} identifier - The signer's identifier, such as a wallet address.
+   * @returns The session token, or undefined.
+   */
+  public getSessionToken(identifier: HexString | Uint8Array): string | undefined {
+    return this.sessionTokens.get(sessionTokenKey(identifier));
+  }
+
+  /**
+   * Sets or clears a signer's gateway session token, for example one saved on an
+   * earlier page load. onSessionToken is not called for a change made here.
+   *
+   * @param {HexString | Uint8Array} identifier - The signer's identifier, such as a wallet address.
+   * @param {string | undefined} token - The session token, or undefined to clear it.
+   */
+  public setSessionToken(identifier: HexString | Uint8Array, token: string | undefined): void {
+    const key = sessionTokenKey(identifier);
+    if (token) {
+      this.sessionTokens.set(key, token);
+    } else {
+      this.sessionTokens.delete(key);
+    }
   }
 
   /**

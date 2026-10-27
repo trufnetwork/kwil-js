@@ -15,7 +15,14 @@ import {
   BytesEncodingStatus,
   EnvironmentType,
 } from '../core/enums';
-import { KGWAuthInfo, AuthSuccess, AuthenticatedBody, LogoutResponse } from '../core/auth';
+import {
+  KGWAuthInfo,
+  AuthSuccess,
+  AuthenticatedBody,
+  LogoutResponse,
+  SessionLogoutError,
+  sessionTokenKey,
+} from '../core/auth';
 import { AxiosResponse } from 'axios';
 import {
   AccountRequest,
@@ -86,6 +93,14 @@ export default class Client extends Api {
 
     const res = await super.post<JsonRPCResponse<AuthnResponse>>(`/rpc/v1`, body);
 
+    // a gateway that can carry the session in a header returns it as a token
+    if (res.status === 200 && res.data?.result?.token) {
+      // a sign-in, the app's own included, turns tokens back on for calls; if the
+      // gateway still refuses the header, the next call turns them off again
+      this.sendSessionTokens = true;
+      this.updateSessionToken(authBody.sender, res.data.result.token);
+    }
+
     if (typeof window === 'undefined') {
       return checkRes(res, (r) => {
         const cookie = res.headers['set-cookie'];
@@ -106,8 +121,82 @@ export default class Client extends Api {
     return checkRes(res, (r) => r.result);
   }
 
-  // TODO: Update once KGW is updated for JSON RPC - DO NOT MERGE WITHOUT RESOLVING
   protected async logoutClient<T extends EnvironmentType>(
+    identifier?: Uint8Array
+  ): Promise<GenericResponse<LogoutResponse<T>>> {
+    // A token's session ends only through a logout sent with that token. The
+    // gateway then leaves the cookie alone, so the cookie logout below still runs.
+    // Every held token is sent, also after the client stopped sending tokens with
+    // calls, since its session lasts until such a logout ends it. A sign-in can
+    // store a new token while the logout is in flight, for this signer or, with
+    // no identifier, for another one: tokens are taken until none is left
+    // untried. Each token is sent once, so one stored back by onSessionToken
+    // cannot keep the loop going.
+    const only = identifier ? sessionTokenKey(identifier) : undefined;
+    const tried = new Set<string>();
+    // signer -> the token whose logout the gateway did not confirm
+    const unconfirmed = new Map<string, string>();
+    const notConfirmed = (key: string, token: string, reason: string) => {
+      unconfirmed.set(key, token);
+      if (this.config.logging) {
+        this.config.logger!(`token logout for ${key} not confirmed: ${reason}`);
+      }
+    };
+    for (;;) {
+      const next = Array.from(this.sessionTokens).find(
+        ([key, token]) => (only === undefined || key === only) && !tried.has(token)
+      );
+      if (!next) {
+        break;
+      }
+      const [key, token] = next;
+      tried.add(token);
+      const tokenBody = this.buildJsonRpcRequest<AuthnLogoutRequest>(
+        JSONRPCMethod.METHOD_KGW_LOGOUT,
+        { account: key }
+      );
+      try {
+        const tokenRes = await super.post<JsonRPCResponse<AuthnResponse>>(
+          `/rpc/v1`,
+          tokenBody,
+          this.sessionTokenConfig(token)
+        );
+        // only a JSON-RPC result confirms the logout
+        if (tokenRes.status !== 200 || !tokenRes.data?.result) {
+          notConfirmed(key, token, tokenRes.data?.error?.message ?? `status ${tokenRes.status}`);
+          continue;
+        }
+      } catch (error) {
+        // no answer: keep the token, and still log out the cookie below
+        notConfirmed(key, token, error instanceof Error ? error.message : String(error));
+        continue;
+      }
+      if (this.sessionTokens.get(key) === token) {
+        // a token whose logout went unconfirmed is held again, for another try
+        this.updateSessionToken(key, unconfirmed.get(key));
+      }
+    }
+
+    let result: GenericResponse<LogoutResponse<T>>;
+    try {
+      result = await this.logoutCookieClient<T>(identifier);
+    } catch (error) {
+      if (unconfirmed.size) {
+        throw new SessionLogoutError(Array.from(unconfirmed.keys()), error);
+      }
+      throw error;
+    }
+
+    // The cookie logout went through, but the gateway did not confirm the logout
+    // of these tokens: report it rather than resolve as a full logout.
+    if (unconfirmed.size) {
+      throw new SessionLogoutError(Array.from(unconfirmed.keys()));
+    }
+    return result;
+  }
+
+  // the gateway logout of the cookie's sessions: one account's, or all of them
+  private async logoutCookieClient<T extends EnvironmentType>(
     identifier?: Uint8Array
   ): Promise<GenericResponse<LogoutResponse<T>>> {
     const body = this.buildJsonRpcRequest<AuthnLogoutRequest>(JSONRPCMethod.METHOD_KGW_LOGOUT, {
@@ -121,11 +210,12 @@ export default class Client extends Api {
       return checkRes(res, (r) => {
         const cookie = res.headers['set-cookie'];
         if (!cookie) {
-          throw new Error('No cookie received from gateway. An error occured with logout.');
+          throw new Error('No cookie received from gateway. An error occurred with logout.');
         }
 
-        // if the cookie is empty, set the cookie to undefined
-        if (cookie[0].startsWith('kgw_session=;')) {
+        // if the cookie is empty, set the cookie to undefined; over HTTPS the
+        // gateway names it __Host-kgw_session
+        if (/^(__Host-)?kgw_session=;/.test(cookie[0])) {
           this.cookie = undefined;
         } else {
           // set the cookie
@@ -308,7 +398,8 @@ export default class Client extends Api {
     });
   }
 
-  protected async callClient(msg: Message): Promise<CallClientResponse<any>> {
+  // callClient sends the call with its sender's session token, unless withToken is false
+  protected async callClient(msg: Message, withToken = true): Promise<CallClientResponse<any>> {
     const body = this.buildJsonRpcRequest<CallRequest>(JSONRPCMethod.METHOD_CALL, {
       body: msg.body,
       auth_type: msg.auth_type,
@@ -316,7 +407,14 @@ export default class Client extends Api {
       signature: msg.signature || '',
     });
 
-    const res = await super.post<JsonRPCResponse<CallResponse>>(`/rpc/v1`, body);
+    // the signer's token, unless the caller left it out or tokens are off for calls
+    const token =
+      withToken && msg.sender ? this.sessionTokenFor(sessionTokenKey(msg.sender)) : undefined;
+    const res = await super.post<JsonRPCResponse<CallResponse>>(
+      `/rpc/v1`,
+      body,
+      this.sessionTokenConfig(token)
+    );
 
     const errorResponse = this.checkAuthError(res);
     if (errorResponse) {

@@ -1,4 +1,5 @@
 import { HexString } from '../utils/types';
+import { bytesToHex } from '../utils/serial';
 import { BytesEncodingStatus, EnvironmentType } from './enums';
 import { Signature } from './signature';
 
@@ -31,11 +32,13 @@ export type AuthSuccess<T extends EnvironmentType> = T extends EnvironmentType.B
 
 export interface BrowserAuthSuccess {
   result: string;
+  token?: string;
 }
 
 export interface NodeAuthSuccess {
   result: string;
   cookie?: string;
+  token?: string;
 }
 
 export type LogoutResponse<T extends EnvironmentType> = T extends EnvironmentType.BROWSER
@@ -110,5 +113,52 @@ export function verifyAuthProperties(
   }
   if (authParm.chain_id && authParm.chain_id !== chainId) {
     throw new Error(`Chain ID mismatch: ${authParm.chain_id} !== ${chainId}`);
+  }
+}
+
+/**
+ * The key under which the client keeps a signer's gateway session token: the
+ * signer's identifier as lowercase hex without a 0x prefix. The gateway names
+ * the session's account the same way.
+ *
+ * @param {HexString | Uint8Array} identifier - The signer's identifier.
+ * @returns The key.
+ */
+export function sessionTokenKey(identifier: HexString | Uint8Array): string {
+  if (typeof identifier !== 'string') {
+    return bytesToHex(identifier);
+  }
+  // a repeated prefix goes too, so passing a key through again leaves it unchanged
+  return identifier.replace(/^(?:0x)+/i, '').toLowerCase();
+}
+
+/**
+ * Thrown by logoutKGW when the gateway did not confirm the logout of one or more
+ * session tokens. The cookie logout has run by then; if it failed as well, `cause`
+ * holds its error. The client keeps those tokens, so the logout can be tried
+ * again; setSessionToken(identifier, undefined) drops a token without ending its
+ * session.
+ */
+export class SessionLogoutError extends Error {
+  /** The signers whose token logout was not confirmed, as lowercase hex without a 0x prefix. */
+  readonly identifiers: string[];
+  /** The cookie logout's error, when it failed as well. */
+  readonly cause?: unknown;
+
+  constructor(identifiers: string[], cause?: unknown) {
+    const many = identifiers.length > 1;
+    const tokens = many ? 'session tokens' : 'session token';
+    const held = identifiers.join(', ');
+    let message =
+      `The gateway did not confirm the logout of the ${tokens} held for ${held}. ` +
+      `The client keeps ${many ? 'them' : 'it'}, so the logout can be tried again.`;
+    if (cause !== undefined) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      message += ` The cookie logout failed as well: ${reason}`;
+    }
+    super(message);
+    this.name = 'SessionLogoutError';
+    this.identifiers = identifiers;
+    this.cause = cause;
   }
 }

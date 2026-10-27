@@ -160,3 +160,4 @@ namespace Utils {
 }
 
 export { NodeKwil, WebKwil, KwilSigner, Types, Utils, Client, AdminClient, EnvironmentType };
+export { SessionLogoutError } from './core/auth';

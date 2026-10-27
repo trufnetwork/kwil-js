@@ -61,7 +61,7 @@ function kgw(opts: { issuesTokens: boolean }) {
     signed.set(`t-${sid}`, sid);
     return `t-${sid}`;
   };
-  let held: { arrived: () => void; wait: Promise<void> } | undefined;
+  let held: { method: string; arrived: () => void; wait: Promise<void> } | undefined;
   const state = {
     signIns: 0,
     refuseAuthorizationHeader: false,
@@ -85,13 +85,18 @@ function kgw(opts: { issuesTokens: boolean }) {
     expire(token: string): void {
       sessions.delete(signed.get(token)!);
     },
-    // holds the answer to the next call until release; sent resolves once it arrives
-    holdNextCall(): { sent: Promise<void>; release: () => void } {
+    // holds the answer to the next request of a method until release; sent
+    // resolves once it arrives
+    holdNext(method: string): { sent: Promise<void>; release: () => void } {
       let arrived!: () => void;
       let release!: () => void;
       const sent = new Promise<void>((r) => (arrived = r));
-      held = { arrived, wait: new Promise<void>((r) => (release = r)) };
+      held = { method, arrived, wait: new Promise<void>((r) => (release = r)) };
       return { sent, release };
+    },
+    // whether the session a token names is still live on the gateway
+    isLive(token: string): boolean {
+      return sessions.has(signed.get(token)!);
     },
   };
 
@@ -120,6 +125,12 @@ function kgw(opts: { issuesTokens: boolean }) {
           _header: `POST /rpc/v1 HTTP/1.1\r\nAuthorization: ${headers.Authorization}\r\n`,
         },
       });
+    }
+    if (held && held.method === method) {
+      const h = held;
+      held = undefined;
+      h.arrived();
+      await h.wait;
     }
     let blocked = state.down || (state.refuseAuthorizationHeader && !!headers.Authorization);
     if (!blocked && method === 'user.call' && headers.Authorization && state.blips > 0) {
@@ -201,12 +212,6 @@ function kgw(opts: { issuesTokens: boolean }) {
         return ok({ result: 'ok' }, setCookie(remaining));
       }
       case 'user.call': {
-        if (held) {
-          const h = held;
-          held = undefined;
-          h.arrived();
-          await h.wait;
-        }
         if (state.callError || (state.tokenCallError && headers.Authorization)) {
           return {
             status: 500,
@@ -348,7 +353,7 @@ describe('gateway session tokens', () => {
       gw.expire(token);
 
       // the slow call goes out with the old token and is answered only later
-      const hold = gw.holdNextCall();
+      const hold = gw.holdNext('user.call');
       const slow = kwil.call(body, signerA);
       await hold.sent;
       // meanwhile another call is refused, signs in and gets a new token
@@ -387,6 +392,32 @@ describe('gateway session tokens', () => {
       gw.logoutError = true;
       await kwil.auth.logoutKGW(signerA).catch(() => undefined);
       expect(kwil.getSessionToken(walletA.address)).toBe('t-s1');
+    });
+
+    it('logs out a token that replaced the one being logged out', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const first = gw.seed(keyOf(walletA));
+      const kwil = new WebKwil({ ...config, sessionTokens: { [keyOf(walletA)]: first } });
+      await kwil.call(body, signerA);
+      const replacement = gw.seed(keyOf(walletA));
+      mockSent.length = 0;
+
+      const hold = gw.holdNext('kgw.logout');
+      const logout = kwil.auth.logoutKGW(signerA);
+      await hold.sent;
+      // a sign-in for the same wallet finishes while the logout is in flight
+      kwil.setSessionToken(walletA.address, replacement);
+      hold.release();
+      await logout;
+
+      expect(gw.isLive(first)).toBe(false);
+      expect(gw.isLive(replacement)).toBe(false);
+      expect(kwil.getSessionToken(walletA.address)).toBeUndefined();
+      expect(sentTo('kgw.logout').map((l) => l.headers.Authorization)).toStrictEqual([
+        `Bearer ${first}`,
+        `Bearer ${replacement}`,
+        undefined,
+      ]);
     });
 
     it('does not let a failing onSessionToken break the call', async () => {

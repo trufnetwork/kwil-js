@@ -127,8 +127,10 @@ export default class Client extends Api {
       ? [sessionTokenKey(identifier)]
       : Array.from(this.sessionTokens.keys());
     for (const key of keys) {
-      const token = this.sessionTokenFor(key);
-      if (token) {
+      // A sign-in can store a new token while a logout is in flight: only the
+      // token that was sent is cleared, and a replacement is logged out next.
+      let token = this.sessionTokenFor(key);
+      while (token) {
         const tokenBody = this.buildJsonRpcRequest<AuthnLogoutRequest>(
           JSONRPCMethod.METHOD_KGW_LOGOUT,
           { account: key }
@@ -139,12 +141,17 @@ export default class Client extends Api {
             tokenBody,
             this.sessionTokenConfig(token)
           );
-          if (tokenRes.status === 200 && !tokenRes.data?.error) {
-            this.updateSessionToken(key, undefined);
+          if (tokenRes.status !== 200 || tokenRes.data?.error) {
+            break;
           }
         } catch {
           // no answer: keep the token, and still log out the cookie below
+          break;
         }
+        if (this.sessionTokenFor(key) === token) {
+          this.updateSessionToken(key, undefined);
+        }
+        token = this.sessionTokenFor(key);
       }
     }
 

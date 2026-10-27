@@ -367,7 +367,7 @@ const kwil = new WebKwil({
 - Only `call` and the gateway logout carry a token, and only the token of the call's signer.
 - When the gateway refuses a token, for example because it expired, the client forgets it. With `autoAuthenticate` on (the default) and a signer passed to `call`, it then signs in again and retries the call once.
 - Calls for the same signer that fail together share one sign-in, so the wallet is asked to sign once.
-- If the browser stops a call carrying a token before any answer, as it does when the gateway's CORS list lacks `Authorization`, the client sends the call once more with the token and then once without it. If only the call without the token gets an answer, this client stops sending tokens. Timeouts and errors the gateway answers never do this.
+- If the browser stops a call carrying a token before any answer, as it does when the gateway's CORS list lacks `Authorization`, the client sends the call once more with the token and then once without it. If the call without the token gets an answer, the client tries the token once more; only if that try is stopped too does this client stop sending tokens. It keeps them, so a new client tries them again. Timeouts and errors the gateway answers never do this.
 - Page scripts can read the tokens, unlike the gateway's cookie. Keep them in `sessionStorage` rather than `localStorage` if you want them to end with the tab.
 
 ### Gateway logout

@@ -567,7 +567,7 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
         if (!senderKey || !tokenSent || !isNetworkError(error)) {
           throw error;
         }
-        response = await this.callPastRefusedToken(message, senderKey, error);
+        response = await this.callPastRefusedToken(message, error);
       }
 
       // if nodeJS user passes a cookie, reset it after the call
@@ -622,13 +622,15 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
   /**
    * A call that carried a token was stopped before any answer, as a refused CORS
    * preflight is when the gateway's list lacks Authorization. It is sent once
-   * more with the token, in case the network blinked, and then without it. Only
-   * when the call without the token gets an answer does the client stop sending
-   * tokens; otherwise the first error is thrown and the token is kept.
+   * more with the token, in case the network blinked, and then without it. If the
+   * call without the token gets an answer, the token is tried once more, so a
+   * gateway that was down for a moment is not taken for one that refuses the
+   * header. Only when that try is stopped too does the client stop sending
+   * tokens, and it keeps them, so a new client tries them again. If the call
+   * without the token gets no answer, the first error is thrown.
    */
   private async callPastRefusedToken(
     message: Message,
-    senderKey: string,
     firstError: unknown
   ): Promise<CallClientResponse<any>> {
     try {
@@ -645,8 +647,15 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
     } catch {
       throw firstError;
     }
+
+    try {
+      return await this.callClient(message);
+    } catch (error) {
+      if (!isNetworkError(error)) {
+        throw error;
+      }
+    }
     this.sendSessionTokens = false;
-    this.updateSessionToken(senderKey, undefined);
     return response;
   }
 

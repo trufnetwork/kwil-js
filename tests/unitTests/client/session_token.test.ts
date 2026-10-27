@@ -1,3 +1,4 @@
+import { inspect } from 'util';
 import { Wallet } from 'ethers';
 import { KwilSigner, NodeKwil, WebKwil } from '../../../src';
 
@@ -71,6 +72,10 @@ function kgw(opts: { issuesTokens: boolean }) {
     timeout: false,
     // calls are answered with an error, as when no node is available
     callError: false,
+    // the network fails in Node, where the error's request holds the raw header text
+    downNode: false,
+    // calls that carry a token are answered with an error
+    tokenCallError: false,
     logoutError: false,
     // a session made outside the client, as an earlier page load would have
     seed(account: string): string {
@@ -107,6 +112,15 @@ function kgw(opts: { issuesTokens: boolean }) {
       : undefined;
 
   mockGateway.handle = async (method, headers, params) => {
+    if (state.downNode) {
+      throw Object.assign(new Error('connect ECONNREFUSED'), {
+        code: 'ECONNREFUSED',
+        config: { headers: { ...headers } },
+        request: {
+          _header: `POST /rpc/v1 HTTP/1.1\r\nAuthorization: ${headers.Authorization}\r\n`,
+        },
+      });
+    }
     let blocked = state.down || (state.refuseAuthorizationHeader && !!headers.Authorization);
     if (!blocked && method === 'user.call' && headers.Authorization && state.blips > 0) {
       state.blips -= 1;
@@ -193,7 +207,7 @@ function kgw(opts: { issuesTokens: boolean }) {
           h.arrived();
           await h.wait;
         }
-        if (state.callError) {
+        if (state.callError || (state.tokenCallError && headers.Authorization)) {
           return {
             status: 500,
             data: { jsonrpc: '2.0', id: 1, error: { code: -900, message: 'no available backend' } },
@@ -450,6 +464,52 @@ describe('gateway session tokens', () => {
       );
     });
 
+    it('keeps sending tokens when the gateway comes back between tries', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const token = gw.seed(keyOf(walletA));
+      const kwil = new WebKwil({ ...config, sessionTokens: { [keyOf(walletA)]: token } });
+      await kwil.call(body, signerA);
+
+      // down for both tries with the token, back for the call without it
+      gw.blips = 2;
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      expect(gw.signIns).toBe(0);
+      expect(kwil.getSessionToken(walletA.address)).toBe(token);
+      expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual([
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+        undefined,
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+      ]);
+    });
+
+    it('throws the answer to the last try with the token and keeps sending tokens', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const token = gw.seed(keyOf(walletA));
+      const kwil = new WebKwil({ ...config, sessionTokens: { [keyOf(walletA)]: token } });
+      await kwil.call(body, signerA);
+
+      // both tries with the token are stopped, the call without it is answered,
+      // and the last try with the token is answered with an error
+      gw.blips = 2;
+      gw.tokenCallError = true;
+      await expect(kwil.call(body, signerA)).rejects.toThrow('no available backend');
+      gw.tokenCallError = false;
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      expect(gw.signIns).toBe(0);
+      expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual([
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+        undefined,
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+      ]);
+    });
+
     it('throws the answer to the second try with the token and keeps the token', async () => {
       const gw = kgw({ issuesTokens: true });
       const token = gw.seed(keyOf(walletA));
@@ -570,21 +630,38 @@ describe('gateway session tokens', () => {
       mockSent.length = 0;
       expect((await kwil.call(body, signerA)).status).toBe(200);
       expect((await kwil.call(body, signerA)).status).toBe(200);
-      expect(seen[seen.length - 1]).toEqual([keyOf(walletA), undefined]);
       expect(gw.signIns).toBe(1);
+      // the token is kept, so a new client tries it again
+      expect(kwil.getSessionToken(walletA.address)).toBe('t-s1');
+      expect(seen).toEqual([[keyOf(walletA), 't-s1']]);
 
       // a wallet that signs in afterwards gets a token, which is not sent either
       expect((await kwil.call(body, signerB)).status).toBe(200);
       expect(kwil.getSessionToken(walletB.address)).toBe('t-s2');
-      // the token call is tried twice before the call goes out without it
+      // two tries with the token, one without, then one more with the token
       expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual([
         'Bearer t-s1',
         'Bearer t-s1',
         undefined,
+        'Bearer t-s1',
         undefined,
         undefined,
         undefined,
       ]);
+    });
+
+    it('keeps the token out of a Node network error, request included', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const token = gw.seed(keyOf(walletA));
+      const kwil = new NodeKwil({ ...config, sessionTokens: { [keyOf(walletA)]: token } });
+      await kwil.call(body, signerA);
+      gw.downNode = true;
+
+      const error: any = await kwil.call(body, signerA).catch((e) => e);
+      expect(error.code).toBe('ECONNREFUSED');
+      expect(error.config.headers.Authorization).toBe('[redacted]');
+      expect(inspect(error, { depth: 6 })).not.toContain(token);
+      expect(kwil.getSessionToken(walletA.address)).toBe(token);
     });
 
     it('works as before with a gateway that issues no token', async () => {

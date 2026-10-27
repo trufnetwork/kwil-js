@@ -126,9 +126,11 @@ export abstract class Api {
         return error.response;
       }
 
-      // the error may reach an error reporter: keep a session token out of it
+      // the error may reach an error reporter: keep a session token out of it.
+      // In Node the request object still holds the raw header text, so it goes.
       if (error?.config?.headers?.Authorization) {
         error.config.headers.Authorization = '[redacted]';
+        delete error.request;
       }
       throw error;
     }

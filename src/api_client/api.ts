@@ -23,6 +23,15 @@ export function isNetworkError(error: any): boolean {
   return error?.code === 'ERR_NETWORK' && !error.response?.status;
 }
 
+/**
+ * True for a request that got no answer at all: an axios error without a
+ * response status, such as a network error, a timeout or a cancel. An error the
+ * client raises for an answer the server sent, such as a JSON-RPC error, is not one.
+ */
+export function isUnanswered(error: any): boolean {
+  return error?.isAxiosError === true && !error.response?.status;
+}
+
 export abstract class Api {
   //private readonly METHOD_GET = 'GET';
   //private readonly METHOD_POST = 'POST';
@@ -34,7 +43,9 @@ export abstract class Api {
    * wallet's in-app browser.
    */
   protected readonly sessionTokens = new Map<string, string>();
-  // false once the gateway turned out to refuse the Authorization header
+  // false while the gateway seems to refuse the Authorization header on calls; a
+  // sign-in that returns a token, or a signer's held token tried again after a
+  // refusal, turns it back on. Logout sends the tokens it holds either way.
   protected sendSessionTokens = true;
   private readonly onSessionToken?: (identifier: string, token: string | undefined) => void;
   protected readonly config: ApiConfig;
@@ -64,18 +75,26 @@ export abstract class Api {
     }
 
     if (this.onSessionToken) {
-      try {
-        this.onSessionToken(key, token);
-      } catch (error) {
-        // a failing callback, such as blocked storage, must not fail the call
+      // a failing callback, such as blocked storage, must not fail the call
+      const failed = (error: unknown) => {
         if (this.config.logging) {
           this.config.logger!(`onSessionToken failed: ${error}`);
         }
+      };
+      try {
+        const done: unknown = this.onSessionToken(key, token);
+        // an async callback's rejection would otherwise go unhandled
+        if (typeof (done as PromiseLike<unknown> | undefined)?.then === 'function') {
+          Promise.resolve(done).catch(failed);
+        }
+      } catch (error) {
+        failed(error);
       }
     }
   }
 
-  // the token to send for a signer, if any
+  // the token to send with a signer's call, if any: none once the gateway turned
+  // out to refuse the header (logout still sends the tokens it holds)
   protected sessionTokenFor(key: string): string | undefined {
     return this.sendSessionTokens ? this.sessionTokens.get(key) : undefined;
   }
@@ -110,6 +129,7 @@ export abstract class Api {
         return error.response;
       }
 
+      this.redactSession(error);
       throw error;
     }
   }
@@ -126,13 +146,24 @@ export abstract class Api {
         return error.response;
       }
 
-      // the error may reach an error reporter: keep a session token out of it.
-      // In Node the request object still holds the raw header text, so it goes.
-      if (error?.config?.headers?.Authorization) {
-        error.config.headers.Authorization = '[redacted]';
-        delete error.request;
-      }
+      this.redactSession(error);
       throw error;
+    }
+  }
+
+  // An error may reach an error reporter: keep the session token, and in Node the
+  // session cookie, out of it. In Node the request object still holds the raw
+  // header text, so it goes.
+  private redactSession(error: any): void {
+    const headers = error?.config?.headers;
+    if (headers?.Authorization || headers?.Cookie) {
+      if (headers.Authorization) {
+        headers.Authorization = '[redacted]';
+      }
+      if (headers.Cookie) {
+        headers.Cookie = '[redacted]';
+      }
+      delete error.request;
     }
   }
 

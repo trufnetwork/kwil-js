@@ -22,7 +22,10 @@ export interface ApiConfig {
    * Called when a signer's gateway session token changes: with the new token
    * after a sign-in that returns one, and with undefined after a logout or when
    * the gateway refuses the token. identifier is the signer's identifier as
-   * lowercase hex. Save the tokens here to keep the sessions across page loads.
+   * lowercase hex without a 0x prefix. Save the tokens here to keep the sessions
+   * across page loads.
+   * The callback may be async. One that throws, or returns a promise that rejects,
+   * does not fail the call.
    */
   onSessionToken?: (identifier: string, token: string | undefined) => void;
 }

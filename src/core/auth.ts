@@ -128,5 +128,37 @@ export function sessionTokenKey(identifier: HexString | Uint8Array): string {
   if (typeof identifier !== 'string') {
     return bytesToHex(identifier);
   }
-  return identifier.replace(/^0x/i, '').toLowerCase();
+  // a repeated prefix goes too, so passing a key through again leaves it unchanged
+  return identifier.replace(/^(?:0x)+/i, '').toLowerCase();
+}
+
+/**
+ * Thrown by logoutKGW when the gateway did not confirm the logout of one or more
+ * session tokens. The cookie logout has run by then; if it failed as well, `cause`
+ * holds its error. The client keeps those tokens, so the logout can be tried
+ * again; setSessionToken(identifier, undefined) drops a token without ending its
+ * session.
+ */
+export class SessionLogoutError extends Error {
+  /** The signers whose token logout was not confirmed, as lowercase hex without a 0x prefix. */
+  readonly identifiers: string[];
+  /** The cookie logout's error, when it failed as well. */
+  readonly cause?: unknown;
+
+  constructor(identifiers: string[], cause?: unknown) {
+    const many = identifiers.length > 1;
+    const tokens = many ? 'session tokens' : 'session token';
+    const held = identifiers.join(', ');
+    let message =
+      `The gateway did not confirm the logout of the ${tokens} held for ${held}. ` +
+      `The client keeps ${many ? 'them' : 'it'}, so the logout can be tried again.`;
+    if (cause !== undefined) {
+      const reason = cause instanceof Error ? cause.message : String(cause);
+      message += ` The cookie logout failed as well: ${reason}`;
+    }
+    super(message);
+    this.name = 'SessionLogoutError';
+    this.identifiers = identifiers;
+    this.cause = cause;
+  }
 }

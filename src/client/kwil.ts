@@ -22,7 +22,7 @@ import { Message, MsgReceipt } from '../core/message';
 import { AuthBody } from '../core/signature';
 import { AuthSuccess, sessionTokenKey } from '../core/auth';
 import { CallClientResponse } from '../core/message';
-import { isNetworkError } from '../api_client/api';
+import { isNetworkError, isUnanswered } from '../api_client/api';
 import { SelectQueryRequest } from '../core/jsonrpc';
 import { encodeParameters, encodeRawStatementParameters, formatEncodedValue } from '../utils/parameterEncoding';
 import { generateDBID } from '../utils/dbid';
@@ -555,24 +555,23 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
       }
       const message = await this.buildMessage(callBody, kwilSigner);
       const senderKey = message.sender ? sessionTokenKey(message.sender) : undefined;
-      const tokenSent = senderKey ? this.sessionTokenFor(senderKey) : undefined;
+      let tokenSent = senderKey ? this.sessionTokenFor(senderKey) : undefined;
 
-      let response: CallClientResponse<any>;
-      try {
-        response = await this.callClient(message);
-      } catch (error) {
-        // Only a call the browser stopped before any answer may be a gateway that
-        // refuses the header. Errors the gateway answered and timeouts are thrown
-        // as they are, and the token is kept.
-        if (!senderKey || !tokenSent || !isNetworkError(error)) {
-          throw error;
-        }
-        response = await this.callPastRefusedToken(message, error);
-      }
+      let response = await this.callWithFallback(message);
 
       // if nodeJS user passes a cookie, reset it after the call
       if (cookieHandlerCallback) {
         cookieHandlerCallback.resetCookie();
+      }
+
+      // Tokens are off for calls, so the gateway has not refused this signer's
+      // held token: try it once before a sign-in replaces it.
+      const held =
+        senderKey && !this.sendSessionTokens ? this.sessionTokens.get(senderKey) : undefined;
+      if (response.authCode === AuthErrorCodes.KGW_MODE && held) {
+        this.sendSessionTokens = true;
+        tokenSent = held;
+        response = await this.callWithFallback(message);
       }
 
       if (response.authCode === AuthErrorCodes.KGW_MODE) {
@@ -598,7 +597,8 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
               this.cookie = res.data.cookie;
             }
           }
-          return await this.callClient(message);
+          // the retry has the same fallback as the call
+          return await this.callWithFallback(message);
         }
       }
       return response
@@ -611,7 +611,8 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
         authBody.challenge,
         authBody.signature
       );
-      return await this.callClient(message);
+      // a private node is not a gateway, so its calls carry no gateway token
+      return await this.callClient(message, false);
     }
 
     throw new Error(
@@ -620,14 +621,36 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
   }
 
   /**
+   * Sends a call with its signer's token, if the client holds one and tokens are
+   * on for calls. Only a call the browser stopped before any answer may be a
+   * gateway that refuses the header; errors the gateway answered and timeouts
+   * are thrown as they are, and the token is kept.
+   */
+  private async callWithFallback(message: Message): Promise<CallClientResponse<any>> {
+    const senderKey = message.sender ? sessionTokenKey(message.sender) : undefined;
+    const token = senderKey ? this.sessionTokenFor(senderKey) : undefined;
+    try {
+      return await this.callClient(message);
+    } catch (error) {
+      if (!token || !isNetworkError(error)) {
+        throw error;
+      }
+      return await this.callPastRefusedToken(message, error);
+    }
+  }
+
+  /**
    * A call that carried a token was stopped before any answer, as a refused CORS
    * preflight is when the gateway's list lacks Authorization. It is sent once
    * more with the token, in case the network blinked, and then without it. If the
-   * call without the token gets an answer, the token is tried once more, so a
-   * gateway that was down for a moment is not taken for one that refuses the
-   * header. Only when that try is stopped too does the client stop sending
-   * tokens, and it keeps them, so a new client tries them again. If the call
-   * without the token gets no answer, the first error is thrown.
+   * call without the token gets an answer, even an error, the token is tried once
+   * more, so a gateway that was down for a moment is not taken for one that
+   * refuses the header. Only when that try is stopped too does the client stop
+   * sending tokens with calls, and the caller gets the answer to the call without
+   * the token. The client keeps the tokens: logout still sends them, a call the
+   * gateway then refuses tries its signer's held token again, and a sign-in that
+   * returns a token turns them back on. If the call without the token gets no
+   * answer, the first error is thrown.
    */
   private async callPastRefusedToken(
     message: Message,
@@ -641,11 +664,15 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
       }
     }
 
-    let response: CallClientResponse<any>;
+    let response: CallClientResponse<any> | undefined;
+    let answeredError: unknown;
     try {
       response = await this.callClient(message, false);
-    } catch {
-      throw firstError;
+    } catch (error) {
+      if (isUnanswered(error)) {
+        throw firstError;
+      }
+      answeredError = error;
     }
 
     try {
@@ -656,6 +683,9 @@ export abstract class Kwil<T extends EnvironmentType> extends Client {
       }
     }
     this.sendSessionTokens = false;
+    if (response === undefined) {
+      throw answeredError;
+    }
     return response;
   }
 

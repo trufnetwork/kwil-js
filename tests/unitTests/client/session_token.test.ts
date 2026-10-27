@@ -1,6 +1,7 @@
 import { inspect } from 'util';
 import { Wallet } from 'ethers';
-import { KwilSigner, NodeKwil, WebKwil } from '../../../src';
+import { KwilSigner, NodeKwil, SessionLogoutError, WebKwil } from '../../../src';
+import { sessionTokenKey } from '../../../src/core/auth';
 
 // Every request goes through mockGateway.handle, with the headers the client
 // built its axios instance with merged with the request's own.
@@ -15,6 +16,9 @@ jest.mock('axios', () => ({
     post: jest.fn(async (_url: string, body: any, config?: any) => {
       const headers = { ...(cfg.headers || {}), ...((config && config.headers) || {}) };
       mockSent.push({ method: body.method, headers, params: body.params });
+      // answer in a later turn of the event loop, as a real request does, so a
+      // runaway loop times a test out instead of starving the worker
+      await new Promise((r) => setImmediate(r));
       return mockGateway.handle(body.method, headers, body.params);
     }),
     get: jest.fn(),
@@ -38,13 +42,14 @@ const unauthorized = (message: string): MockResponse => ({
 const callResult = () =>
   ok({ query_result: { column_names: ['x'], column_types: [], values: [[1]] }, logs: '' });
 
-// kgw models the gateway in kgw#121: a cookie that holds every account's
-// session, and (when it issues tokens) a token that names one session. Every
-// token the gateway signed verifies, and a token that verifies is used instead
-// of the cookie: its session must still be live and belong to the call's
-// sender. A token the gateway never signed leaves the cookie in charge. A
-// sign-in reuses the account's live session in the cookie and makes a new one
-// otherwise. Logout with a token ends that session and leaves the cookie alone.
+// kgw models the gateway as kgw#121 built it (on kgw main as #122): a cookie
+// that holds every account's session, and (when it issues tokens) a token that
+// names one session. Every token the gateway signed verifies, and a token that
+// verifies is used instead of the cookie: its session must still be live and
+// belong to the call's sender. A token the gateway never signed leaves the
+// cookie in charge. A sign-in reuses the account's live session in the cookie
+// and makes a new one otherwise. Logout with a token ends that session and
+// leaves the cookie alone.
 function kgw(opts: { issuesTokens: boolean }) {
   let next = 0;
   const sessions = new Map<string, string>(); // live session id -> account
@@ -78,7 +83,13 @@ function kgw(opts: { issuesTokens: boolean }) {
     tokenCallError: false,
     // logouts that carry a token are answered with an error
     tokenLogoutError: false,
+    // the logouts of these tokens are answered with an error
+    failTokenLogout: new Set<string>(),
     logoutError: false,
+    // the node's mode as user.health reports it
+    mode: 'open',
+    // calls are answered without a session, as the gateway answers exempt reads
+    publicCalls: false,
     // a session made outside the client, as an earlier page load would have
     seed(account: string): string {
       return tokenFor(newSession(account));
@@ -121,10 +132,11 @@ function kgw(opts: { issuesTokens: boolean }) {
   mockGateway.handle = async (method, headers, params) => {
     if (state.downNode) {
       throw Object.assign(new Error('connect ECONNREFUSED'), {
+        isAxiosError: true,
         code: 'ECONNREFUSED',
         config: { headers: { ...headers } },
         request: {
-          _header: `POST /rpc/v1 HTTP/1.1\r\nAuthorization: ${headers.Authorization}\r\n`,
+          _header: `POST /rpc/v1 HTTP/1.1\r\nAuthorization: ${headers.Authorization}\r\nCookie: ${headers.Cookie}\r\n`,
         },
       });
     }
@@ -144,6 +156,7 @@ function kgw(opts: { issuesTokens: boolean }) {
       // dead network in a browser: the XMLHttpRequest, with status 0, is the response
       const xhr = { status: 0 };
       throw Object.assign(new Error('Network Error'), {
+        isAxiosError: true,
         code: 'ERR_NETWORK',
         config: { headers: { ...headers } },
         request: xhr,
@@ -152,13 +165,16 @@ function kgw(opts: { issuesTokens: boolean }) {
     }
     if (state.timeout && method === 'user.call') {
       throw Object.assign(new Error('timeout of 10000ms exceeded'), {
+        isAxiosError: true,
         code: 'ECONNABORTED',
         config: { headers: { ...headers } },
       });
     }
     switch (method) {
       case 'user.health':
-        return ok({ mode: 'open' });
+        return ok({ mode: state.mode });
+      case 'user.challenge':
+        return ok({ challenge: 'ab'.repeat(32) });
       case 'kgw.authn_param':
         return ok({
           nonce: 'abc123',
@@ -185,10 +201,15 @@ function kgw(opts: { issuesTokens: boolean }) {
         return ok(result, setCookie(live ? entries : [`${account}:${sid}`, ...entries]));
       }
       case 'kgw.logout': {
-        if (state.logoutError || (state.tokenLogoutError && headers.Authorization)) {
+        const sent = bearer(headers);
+        if (
+          state.logoutError ||
+          (sent && (state.tokenLogoutError || state.failTokenLogout.has(sent)))
+        ) {
+          // as kgw answers when it cannot remove the session
           return {
-            status: 200,
-            data: { jsonrpc: '2.0', id: 1, error: { code: -902, message: 'bad request' } },
+            status: 500,
+            data: { jsonrpc: '2.0', id: 1, error: { code: -900, message: 'remove session error' } },
             headers: {},
           };
         }
@@ -214,6 +235,9 @@ function kgw(opts: { issuesTokens: boolean }) {
         return ok({ result: 'ok' }, setCookie(remaining));
       }
       case 'user.call': {
+        if (state.mode === 'private' || state.publicCalls) {
+          return callResult();
+        }
         if (state.callError || (state.tokenCallError && headers.Authorization)) {
           return {
             status: 500,
@@ -392,7 +416,11 @@ describe('gateway session tokens', () => {
       const kwil = new WebKwil(config);
       await kwil.call(body, signerA);
       gw.logoutError = true;
-      await kwil.auth.logoutKGW(signerA).catch(() => undefined);
+      const error = await kwil.auth.logoutKGW(signerA).catch((e) => e);
+      expect(error).toBeInstanceOf(SessionLogoutError);
+      expect(error.identifiers).toStrictEqual([keyOf(walletA)]);
+      // the cookie logout was answered with an error too
+      expect(error.cause).toBeInstanceOf(Error);
       expect(kwil.getSessionToken(walletA.address)).toBe('t-s1');
     });
 
@@ -429,8 +457,12 @@ describe('gateway session tokens', () => {
       gw.tokenLogoutError = true;
       mockSent.length = 0;
 
-      await expect(kwil.auth.logoutKGW(signerA)).rejects.toThrow(
-        `did not end the token session of ${keyOf(walletA)}`
+      const error = await kwil.auth.logoutKGW(signerA).catch((e) => e);
+      expect(error).toBeInstanceOf(SessionLogoutError);
+      expect(error.identifiers).toStrictEqual([keyOf(walletA)]);
+      expect(error.cause).toBeUndefined();
+      expect(error.message).toContain(
+        `did not confirm the logout of the session token held for ${keyOf(walletA)}`
       );
       expect(sentTo('kgw.logout').map((l) => l.headers.Authorization)).toStrictEqual([
         'Bearer t-s1',
@@ -441,9 +473,225 @@ describe('gateway session tokens', () => {
 
       // tried again, the logout ends the session
       gw.tokenLogoutError = false;
-      await kwil.auth.logoutKGW(signerA);
+      expect((await kwil.auth.logoutKGW(signerA)).data).toEqual({ result: 'ok' });
       expect(gw.isLive('t-s1')).toBe(false);
       expect(kwil.getSessionToken(walletA.address)).toBeUndefined();
+    });
+
+    it('names only the wallets whose token logout was not confirmed', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const kwil = new WebKwil(config);
+      await kwil.call(body, signerA);
+      await kwil.call(body, signerB);
+      gw.failTokenLogout.add('t-s1');
+
+      const error = await kwil.auth.logoutKGW().catch((e) => e);
+      expect(error).toBeInstanceOf(SessionLogoutError);
+      expect(error.identifiers).toStrictEqual([keyOf(walletA)]);
+      expect(kwil.getSessionToken(walletA.address)).toBe('t-s1');
+      expect(kwil.getSessionToken(walletB.address)).toBeUndefined();
+      expect(gw.isLive('t-s1')).toBe(true);
+      expect(gw.isLive('t-s2')).toBe(false);
+    });
+
+    it('does not take an answer without a JSON-RPC result as a token logout', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const kwil = new WebKwil(config);
+      await kwil.call(body, signerA);
+      const handle = mockGateway.handle;
+      mockGateway.handle = async (method, headers, params) =>
+        method === 'kgw.logout' && headers.Authorization
+          ? { status: 200, data: '<html>maintenance</html>', headers: {} }
+          : handle(method, headers, params);
+      try {
+        await expect(kwil.auth.logoutKGW(signerA)).rejects.toBeInstanceOf(SessionLogoutError);
+        expect(gw.isLive('t-s1')).toBe(true);
+        expect(kwil.getSessionToken(walletA.address)).toBe('t-s1');
+      } finally {
+        mockGateway.handle = handle;
+      }
+    });
+
+    it('sends each token logout once, even when onSessionToken stores the token back', async () => {
+      kgw({ issuesTokens: true });
+      const kwil: WebKwil = new WebKwil({
+        ...config,
+        onSessionToken: (id, token) => {
+          if (!token) {
+            kwil.setSessionToken(id, 't-s1');
+          }
+        },
+      });
+      await kwil.call(body, signerA);
+      mockSent.length = 0;
+
+      expect((await kwil.auth.logoutKGW(signerA)).data).toEqual({ result: 'ok' });
+      expect(sentTo('kgw.logout').map((l) => l.headers.Authorization)).toStrictEqual([
+        'Bearer t-s1',
+        undefined,
+      ]);
+    });
+
+    it('holds an unconfirmed token again after a sign-in replaced it mid-logout', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const kwil = new WebKwil(config);
+      await kwil.call(body, signerA);
+      const replacement = gw.seed(keyOf(walletA));
+      gw.failTokenLogout.add('t-s1');
+
+      const hold = gw.holdNext('kgw.logout');
+      const logout = kwil.auth.logoutKGW(signerA).catch((e) => e);
+      await hold.sent;
+      // a sign-in for the same wallet finishes while the failing logout is in flight
+      kwil.setSessionToken(walletA.address, replacement);
+      hold.release();
+      const error = await logout;
+
+      expect(error).toBeInstanceOf(SessionLogoutError);
+      expect(error.identifiers).toStrictEqual([keyOf(walletA)]);
+      expect(gw.isLive(replacement)).toBe(false);
+      expect(gw.isLive('t-s1')).toBe(true);
+      // the client holds the token whose logout went unconfirmed, as the error says
+      expect(kwil.getSessionToken(walletA.address)).toBe('t-s1');
+    });
+
+    it('logs out a token another wallet stored while logoutKGW() was in flight', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const kwil = new WebKwil(config);
+      await kwil.call(body, signerA);
+      const other = gw.seed(keyOf(walletB));
+
+      const hold = gw.holdNext('kgw.logout');
+      const logout = kwil.auth.logoutKGW();
+      await hold.sent;
+      // a sign-in for another wallet finishes while the logout is in flight
+      kwil.setSessionToken(walletB.address, other);
+      hold.release();
+      await logout;
+
+      expect(gw.isLive('t-s1')).toBe(false);
+      expect(gw.isLive(other)).toBe(false);
+      expect(kwil.getSessionToken(walletB.address)).toBeUndefined();
+    });
+
+    it('tries the held token again before asking the wallet, after tokens went off', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const token = gw.seed(keyOf(walletA));
+      const kwil = new WebKwil({ ...config, sessionTokens: { [keyOf(walletA)]: token } });
+      await kwil.call(body, signerA);
+      mockSent.length = 0;
+
+      // the network drops for the first two tries with the token and for the last
+      // one, while the call without it gets through: tokens go off for calls
+      gw.blips = 3;
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      // the call without the token was refused, so the held token was tried again
+      expect(gw.signIns).toBe(0);
+      expect(kwil.getSessionToken(walletA.address)).toBe(token);
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      expect(gw.signIns).toBe(0);
+      expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual([
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+        undefined,
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+      ]);
+    });
+
+    it('signs in once when the held token tried again is refused too', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const token = gw.seed(keyOf(walletA));
+      const kwil = new WebKwil({ ...config, sessionTokens: { [keyOf(walletA)]: token } });
+      await kwil.call(body, signerA);
+      gw.expire(token);
+      mockSent.length = 0;
+
+      gw.blips = 3;
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      expect(gw.signIns).toBe(1);
+      expect(kwil.getSessionToken(walletA.address)).toBe('t-s2');
+      expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual([
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+        undefined,
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+        'Bearer t-s2',
+      ]);
+    });
+
+    it('drops a refused held token and signs in, when tokens were already off', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const token = gw.seed(keyOf(walletA));
+      const kwil = new WebKwil({ ...config, sessionTokens: { [keyOf(walletA)]: token } });
+      await kwil.call(body, signerA);
+
+      // a read the gateway answers without a session turns tokens off for calls
+      gw.publicCalls = true;
+      gw.blips = 3;
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      gw.publicCalls = false;
+
+      // the held token has expired by the next read that needs the session
+      gw.expire(token);
+      mockSent.length = 0;
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      expect(gw.signIns).toBe(1);
+      expect(kwil.getSessionToken(walletA.address)).toBe('t-s2');
+      expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual([
+        undefined,
+        `Bearer ${token}`,
+        'Bearer t-s2',
+      ]);
+    });
+
+    it("turns tokens back on with the app's own sign-in", async () => {
+      const gw = kgw({ issuesTokens: true });
+      const token = gw.seed(keyOf(walletA));
+      const kwil = new WebKwil({
+        ...config,
+        autoAuthenticate: false,
+        sessionTokens: { [keyOf(walletA)]: token },
+      });
+      await kwil.call(body, signerA);
+
+      // a read the gateway answers without a session turns tokens off for calls
+      gw.publicCalls = true;
+      gw.blips = 3;
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      gw.publicCalls = false;
+
+      // the app signs another wallet in itself; its token goes out at once
+      await kwil.auth.authenticateKGW(signerB);
+      mockSent.length = 0;
+      expect((await kwil.call(body, signerB)).status).toBe(200);
+      expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual([
+        'Bearer t-s2',
+      ]);
+    });
+
+    it('does not leave a rejected onSessionToken promise unhandled', async () => {
+      kgw({ issuesTokens: true });
+      const unhandled: unknown[] = [];
+      const listen = (reason: unknown) => {
+        unhandled.push(reason);
+      };
+      process.on('unhandledRejection', listen);
+      try {
+        const kwil = new WebKwil({
+          ...config,
+          onSessionToken: async () => {
+            throw new Error('storage blocked');
+          },
+        });
+        expect((await kwil.call(body, signerA)).status).toBe(200);
+        await new Promise((r) => setTimeout(r, 20));
+      } finally {
+        process.off('unhandledRejection', listen);
+      }
+      expect(unhandled).toStrictEqual([]);
     });
 
     it('does not let a failing onSessionToken break the call', async () => {
@@ -503,6 +751,39 @@ describe('gateway session tokens', () => {
       expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual(
         Array(3).fill(`Bearer ${token}`)
       );
+    });
+
+    it('throws a network error on a call that carried no token, with no more tries', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const token = gw.seed(keyOf(walletA));
+      const kwil = new WebKwil({ ...config, sessionTokens: { [keyOf(walletA)]: token } });
+      await kwil.call(body, signerA);
+      mockSent.length = 0;
+
+      gw.down = true;
+      await expect(kwil.call(body)).rejects.toThrow('Network Error');
+      expect(sentTo('user.call')).toHaveLength(1);
+      gw.down = false;
+      mockSent.length = 0;
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      expect(sentTo('user.call')[0].headers.Authorization).toBe(`Bearer ${token}`);
+    });
+
+    it('throws the first error when the call without the token times out', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const token = gw.seed(keyOf(walletA));
+      const kwil = new WebKwil({ ...config, sessionTokens: { [keyOf(walletA)]: token } });
+      await kwil.call(body, signerA);
+      mockSent.length = 0;
+
+      gw.blips = 2;
+      gw.timeout = true;
+      await expect(kwil.call(body, signerA)).rejects.toThrow('Network Error');
+      expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual([
+        `Bearer ${token}`,
+        `Bearer ${token}`,
+        undefined,
+      ]);
     });
 
     it('sends a call again with its token after the network blinks', async () => {
@@ -664,7 +945,7 @@ describe('gateway session tokens', () => {
       await kwil.call(body, signerB);
 
       mockSent.length = 0;
-      await kwil.auth.logoutKGW();
+      expect((await kwil.auth.logoutKGW()).data).toMatchObject({ result: 'ok' });
       expect(sentTo('kgw.logout').map((l) => l.headers.Authorization)).toStrictEqual([
         'Bearer t-s1',
         'Bearer t-s2',
@@ -672,7 +953,10 @@ describe('gateway session tokens', () => {
       ]);
       expect(kwil.getSessionToken(walletA.address)).toBeUndefined();
       expect(kwil.getSessionToken(walletB.address)).toBeUndefined();
+      // the gateway cleared the cookie, so the next request carries none
+      mockSent.length = 0;
       await kwil.call(body, signerA);
+      expect(sentTo('user.call')[0].headers.Cookie).toBeUndefined();
       await kwil.call(body, signerB);
       expect(gw.signIns).toBe(4);
     });
@@ -692,10 +976,12 @@ describe('gateway session tokens', () => {
       expect(kwil.getSessionToken(walletA.address)).toBe('t-s1');
       expect(seen).toEqual([[keyOf(walletA), 't-s1']]);
 
-      // a wallet that signs in afterwards gets a token, which is not sent either
+      // a wallet that signs in afterwards turns tokens back on; its token is
+      // refused the same way, and the call goes through on the cookie
       expect((await kwil.call(body, signerB)).status).toBe(200);
       expect(kwil.getSessionToken(walletB.address)).toBe('t-s2');
-      // two tries with the token, one without, then one more with the token
+      // A: two tries with the token, one without, one more with it; then without.
+      // B: without, signs in, then the same four tries with its token
       expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual([
         'Bearer t-s1',
         'Bearer t-s1',
@@ -703,7 +989,10 @@ describe('gateway session tokens', () => {
         'Bearer t-s1',
         undefined,
         undefined,
+        'Bearer t-s2',
+        'Bearer t-s2',
         undefined,
+        'Bearer t-s2',
       ]);
     });
 
@@ -715,10 +1004,14 @@ describe('gateway session tokens', () => {
       const held = gw.seed(keyOf(walletA));
       kwil.setSessionToken(walletA.address, held);
       gw.refuseAuthorizationHeader = true;
-      expect((await kwil.call(body, signerA)).status).toBe(200); // tokens are off from here
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      // tokens are off for calls from here
+      mockSent.length = 0;
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual([undefined]);
 
       // while the header is refused, the logout cannot end the token session and says so
-      await expect(kwil.auth.logoutKGW(signerA)).rejects.toThrow('did not end the token session');
+      await expect(kwil.auth.logoutKGW(signerA)).rejects.toBeInstanceOf(SessionLogoutError);
       expect(gw.isLive(held)).toBe(true);
       expect(kwil.getSessionToken(walletA.address)).toBe(held);
 
@@ -729,18 +1022,71 @@ describe('gateway session tokens', () => {
       expect(kwil.getSessionToken(walletA.address)).toBeUndefined();
     });
 
-    it('keeps the token out of a Node network error, request included', async () => {
+    it('keeps the token and the cookie out of a Node network error, request included', async () => {
       const gw = kgw({ issuesTokens: true });
-      const token = gw.seed(keyOf(walletA));
-      const kwil = new NodeKwil({ ...config, sessionTokens: { [keyOf(walletA)]: token } });
-      await kwil.call(body, signerA);
+      const kwil = new NodeKwil(config);
+      await kwil.call(body, signerA); // signs in: token t-s1 and the session cookie
       gw.downNode = true;
 
       const error: any = await kwil.call(body, signerA).catch((e) => e);
       expect(error.code).toBe('ECONNREFUSED');
       expect(error.config.headers.Authorization).toBe('[redacted]');
-      expect(inspect(error, { depth: 6 })).not.toContain(token);
-      expect(kwil.getSessionToken(walletA.address)).toBe(token);
+      expect(error.config.headers.Cookie).toBe('[redacted]');
+      const shown = inspect(error, { depth: 6 });
+      expect(shown).not.toContain('t-s1');
+      expect(shown).not.toContain(`${keyOf(walletA)}:s1`);
+      expect(kwil.getSessionToken(walletA.address)).toBe('t-s1');
+    });
+
+    it('keeps the cookie out of a Node network error when no token was sent', async () => {
+      const gw = kgw({ issuesTokens: false });
+      const kwil = new NodeKwil(config);
+      await kwil.call(body, signerA); // signs in: the session cookie only
+      gw.downNode = true;
+
+      const error: any = await kwil.call(body, signerA).catch((e) => e);
+      expect(error.config.headers.Cookie).toBe('[redacted]');
+      expect(inspect(error, { depth: 6 })).not.toContain(`${keyOf(walletA)}:s1`);
+    });
+
+    it('gives the retry after a sign-in the same fallback for a refused header', async () => {
+      const gw = kgw({ issuesTokens: true });
+      gw.refuseAuthorizationHeader = true;
+      const kwil = new NodeKwil(config);
+
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      expect(gw.signIns).toBe(1);
+      expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual([
+        undefined,
+        'Bearer t-s1',
+        'Bearer t-s1',
+        undefined,
+        'Bearer t-s1',
+      ]);
+    });
+
+    it('throws the error the call without the token was answered with, after turning tokens off', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const kwil = new NodeKwil(config);
+      await kwil.call(body, signerA);
+      gw.refuseAuthorizationHeader = true;
+      gw.callError = true;
+
+      await expect(kwil.call(body, signerA)).rejects.toThrow('no available backend');
+      gw.callError = false;
+      mockSent.length = 0;
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual([undefined]);
+    });
+
+    it('sends no gateway token to a node in private mode', async () => {
+      const gw = kgw({ issuesTokens: true });
+      gw.mode = 'private';
+      const kwil = new NodeKwil({ ...config, sessionTokens: { [keyOf(walletA)]: 'held-token' } });
+
+      expect((await kwil.call(body, signerA)).status).toBe(200);
+      expect(sentTo('user.challenge')).toHaveLength(1);
+      expect(sentTo('user.call').map((c) => c.headers.Authorization)).toStrictEqual([undefined]);
     });
 
     it('works as before with a gateway that issues no token', async () => {
@@ -754,6 +1100,13 @@ describe('gateway session tokens', () => {
       expect(seen).toEqual([]);
       mockSent.forEach((s) => expect(s.headers.Authorization).toBeUndefined());
     });
+  });
+
+  it('keeps one key per signer, however often the 0x prefix repeats', () => {
+    const key = sessionTokenKey('0x0xAB12');
+    expect(key).toBe('ab12');
+    expect(sessionTokenKey(key)).toBe(key);
+    expect(sessionTokenKey('0XAB12')).toBe(key);
   });
 
   it('setSessionToken does not call onSessionToken, and an empty token clears', () => {

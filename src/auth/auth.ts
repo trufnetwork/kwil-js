@@ -154,6 +154,18 @@ export class Auth<T extends EnvironmentType> {
     return res;
   }
 
+  /**
+   * Logs out of the Kwil Gateway: the given signer's sessions, or every session
+   * the client holds. Each session token the client holds for them is logged out
+   * first, then the cookie's sessions. A token whose logout the gateway confirms
+   * is forgotten.
+   *
+   * @param {KwilSigner} signer (optional) - The signer to log out. Leave it out to log out every session.
+   * @returns A promise that resolves to the gateway's answer to the cookie logout.
+   * @throws {SessionLogoutError} When the gateway did not confirm the logout of a
+   * session token. The cookie logout has run by then; if it failed as well, the
+   * error's `cause` holds its error. The client keeps those tokens for another try.
+   */
   public async logoutKGW(signer?: KwilSigner): Promise<GenericResponse<LogoutResponse<T>>> {
     const identifier = signer?.identifier || undefined;
     return await this.authClient.logoutClient(identifier);

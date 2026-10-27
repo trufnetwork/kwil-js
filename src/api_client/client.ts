@@ -126,10 +126,13 @@ export default class Client extends Api {
     const keys = identifier
       ? [sessionTokenKey(identifier)]
       : Array.from(this.sessionTokens.keys());
+    const notEnded: string[] = [];
     for (const key of keys) {
       // A sign-in can store a new token while a logout is in flight: only the
       // token that was sent is cleared, and a replacement is logged out next.
-      let token = this.sessionTokenFor(key);
+      // A held token is sent here even after the client stopped sending tokens
+      // with calls, since its session lasts until a logout sent with it.
+      let token = this.sessionTokens.get(key);
       while (token) {
         const tokenBody = this.buildJsonRpcRequest<AuthnLogoutRequest>(
           JSONRPCMethod.METHOD_KGW_LOGOUT,
@@ -142,16 +145,18 @@ export default class Client extends Api {
             this.sessionTokenConfig(token)
           );
           if (tokenRes.status !== 200 || tokenRes.data?.error) {
+            notEnded.push(key);
             break;
           }
         } catch {
           // no answer: keep the token, and still log out the cookie below
+          notEnded.push(key);
           break;
         }
-        if (this.sessionTokenFor(key) === token) {
+        if (this.sessionTokens.get(key) === token) {
           this.updateSessionToken(key, undefined);
         }
-        token = this.sessionTokenFor(key);
+        token = this.sessionTokens.get(key);
       }
     }
 
@@ -161,9 +166,10 @@ export default class Client extends Api {
 
     const res = await super.post<JsonRPCResponse<AuthnResponse>>(`/rpc/v1`, body);
 
+    let result: GenericResponse<LogoutResponse<T>>;
     // if we are in nodejs, we need to return the cookie
     if (typeof window === 'undefined') {
-      return checkRes(res, (r) => {
+      result = checkRes(res, (r) => {
         const cookie = res.headers['set-cookie'];
         if (!cookie) {
           throw new Error('No cookie received from gateway. An error occured with logout.');
@@ -182,10 +188,20 @@ export default class Client extends Api {
           cookie: cookie[0],
         };
       });
+    } else {
+      // if we are in the browser, we don't need to return the cookie - the browser will handle it
+      result = checkRes(res, (r) => r.result);
     }
 
-    // if we are in the browser, we don't need to return the cookie - the browser will handle it
-    return checkRes(res, (r) => r.result);
+    // The cookie logout ran, but a token session it cannot end is still live:
+    // report it rather than resolve as a full logout. The token is kept for a retry.
+    if (notEnded.length) {
+      throw new Error(
+        `Gateway logout did not end the token session of ${notEnded.join(', ')}; ` +
+          'the token is kept, so the logout can be tried again.'
+      );
+    }
+    return result;
   }
 
   protected async getAccountClient(accountId: AccountId): Promise<GenericResponse<Account>> {

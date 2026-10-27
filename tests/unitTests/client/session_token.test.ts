@@ -76,6 +76,8 @@ function kgw(opts: { issuesTokens: boolean }) {
     downNode: false,
     // calls that carry a token are answered with an error
     tokenCallError: false,
+    // logouts that carry a token are answered with an error
+    tokenLogoutError: false,
     logoutError: false,
     // a session made outside the client, as an earlier page load would have
     seed(account: string): string {
@@ -183,7 +185,7 @@ function kgw(opts: { issuesTokens: boolean }) {
         return ok(result, setCookie(live ? entries : [`${account}:${sid}`, ...entries]));
       }
       case 'kgw.logout': {
-        if (state.logoutError) {
+        if (state.logoutError || (state.tokenLogoutError && headers.Authorization)) {
           return {
             status: 200,
             data: { jsonrpc: '2.0', id: 1, error: { code: -902, message: 'bad request' } },
@@ -418,6 +420,30 @@ describe('gateway session tokens', () => {
         `Bearer ${replacement}`,
         undefined,
       ]);
+    });
+
+    it('reports a token logout the gateway did not confirm, after the cookie logout', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const kwil = new WebKwil(config);
+      await kwil.call(body, signerA);
+      gw.tokenLogoutError = true;
+      mockSent.length = 0;
+
+      await expect(kwil.auth.logoutKGW(signerA)).rejects.toThrow(
+        `did not end the token session of ${keyOf(walletA)}`
+      );
+      expect(sentTo('kgw.logout').map((l) => l.headers.Authorization)).toStrictEqual([
+        'Bearer t-s1',
+        undefined,
+      ]);
+      expect(kwil.getSessionToken(walletA.address)).toBe('t-s1');
+      expect(gw.isLive('t-s1')).toBe(true);
+
+      // tried again, the logout ends the session
+      gw.tokenLogoutError = false;
+      await kwil.auth.logoutKGW(signerA);
+      expect(gw.isLive('t-s1')).toBe(false);
+      expect(kwil.getSessionToken(walletA.address)).toBeUndefined();
     });
 
     it('does not let a failing onSessionToken break the call', async () => {
@@ -679,6 +705,28 @@ describe('gateway session tokens', () => {
         undefined,
         undefined,
       ]);
+    });
+
+    it('still logs out a held token after the client stopped sending tokens', async () => {
+      const gw = kgw({ issuesTokens: true });
+      const kwil = new NodeKwil(config);
+      await kwil.call(body, signerA);
+      // a token for a session of its own, apart from the cookie's
+      const held = gw.seed(keyOf(walletA));
+      kwil.setSessionToken(walletA.address, held);
+      gw.refuseAuthorizationHeader = true;
+      expect((await kwil.call(body, signerA)).status).toBe(200); // tokens are off from here
+
+      // while the header is refused, the logout cannot end the token session and says so
+      await expect(kwil.auth.logoutKGW(signerA)).rejects.toThrow('did not end the token session');
+      expect(gw.isLive(held)).toBe(true);
+      expect(kwil.getSessionToken(walletA.address)).toBe(held);
+
+      // once the header gets through, the held token's session ends
+      gw.refuseAuthorizationHeader = false;
+      await kwil.auth.logoutKGW(signerA);
+      expect(gw.isLive(held)).toBe(false);
+      expect(kwil.getSessionToken(walletA.address)).toBeUndefined();
     });
 
     it('keeps the token out of a Node network error, request included', async () => {

@@ -372,7 +372,7 @@ const kwil = new WebKwil({
 
 ### Gateway logout
 
-To log out of the Kwil Gateway, you can call the `kwil.auth.logoutKGW()` method. This is useful if you want to switch accounts or remove the authentication cookie. When the client holds session tokens, the logout also ends the session of each token it covers (the given signer's, or all of them) and the client forgets those tokens.
+To log out of the Kwil Gateway, you can call the `kwil.auth.logoutKGW()` method. This is useful if you want to switch accounts or remove the authentication cookie. When the client holds session tokens, the logout also ends the session of each token it covers (the given signer's, or all of them) and the client forgets those tokens. If the gateway does not confirm a token's logout, the client keeps that token and `logoutKGW` throws after the cookie logout, so the app can call it again.
 
 ```javascript
 await kwil.auth.logoutKGW();

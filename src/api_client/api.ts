@@ -16,10 +16,11 @@ import { sessionTokenKey } from '../core/auth';
 /**
  * True for a request the browser stopped before any answer came back, which is
  * how a refused CORS preflight shows. A timeout, a cancel, or an error the
- * server answered is not one.
+ * server answered is not one. In a browser, axios puts the XMLHttpRequest in
+ * `response` with status 0, so only a response with a status counts as an answer.
  */
 export function isNetworkError(error: any): boolean {
-  return error?.code === 'ERR_NETWORK' && !error.response;
+  return error?.code === 'ERR_NETWORK' && !error.response?.status;
 }
 
 export abstract class Api {

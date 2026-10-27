@@ -113,10 +113,14 @@ function kgw(opts: { issuesTokens: boolean }) {
       blocked = true;
     }
     if (blocked) {
-      // stopped before any answer, as axios reports a refused CORS preflight or a dead network
+      // stopped before any answer, as axios 0.27 reports a refused CORS preflight or a
+      // dead network in a browser: the XMLHttpRequest, with status 0, is the response
+      const xhr = { status: 0 };
       throw Object.assign(new Error('Network Error'), {
         code: 'ERR_NETWORK',
         config: { headers: { ...headers } },
+        request: xhr,
+        response: xhr,
       });
     }
     if (state.timeout && method === 'user.call') {

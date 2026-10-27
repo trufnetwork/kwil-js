@@ -341,7 +341,12 @@ A gateway that supports it returns the session as a token at sign-in, and the cl
 The client keeps one token per signer, in memory. To keep them across page loads, save them as they change and pass them back next time:
 
 ```javascript
-const saved = JSON.parse(sessionStorage.getItem('kgw-tokens') || '{}');
+let saved = {};
+try {
+  saved = JSON.parse(sessionStorage.getItem('kgw-tokens') || '{}');
+} catch {
+  // storage blocked or the saved value unreadable: start without saved tokens
+}
 const kwil = new WebKwil({
   kwilProvider: 'https://gateway.example',
   chainId: 'my-chain',
@@ -349,7 +354,11 @@ const kwil = new WebKwil({
   onSessionToken: (identifier, token) => {
     if (token) saved[identifier] = token;
     else delete saved[identifier];
-    sessionStorage.setItem('kgw-tokens', JSON.stringify(saved));
+    try {
+      sessionStorage.setItem('kgw-tokens', JSON.stringify(saved));
+    } catch {
+      // storage blocked or full: the client keeps its tokens in memory
+    }
   },
 });
 ```
